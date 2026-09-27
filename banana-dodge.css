@@ -1,0 +1,258 @@
+:root {
+  --bg-dark: #0f1f10;
+  --bg-mid: #1c3a1e;
+  --accent: #f5c542;
+  --panel: #14321a;
+  --text: #f2ead9;
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: radial-gradient(circle at top, var(--bg-mid), var(--bg-dark));
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  position: relative;
+}
+.wrap {
+  width: 100%;
+  /* Board is 7 cols x 9 rows (taller than wide), so cap width by both a
+     px ceiling and by available viewport height, or a big/short screen
+     would force the canvas to overflow past the fold. */
+  max-width: min(480px, calc(78vh * 7 / 9));
+}
+h1 {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 1.4rem;
+}
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0 4px 6px;
+}
+.hud span { color: var(--accent); }
+.icon-btn {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text);
+  padding: 4px;
+}
+.timerbar-outer {
+  width: 100%;
+  height: 8px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.timerbar-inner {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear, background 0.2s;
+}
+#game {
+  width: 100%;
+  display: block;
+  background: var(--panel);
+  border: 4px solid #0a1c0c;
+  border-radius: 10px;
+  touch-action: none;
+}
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(2, 56px);
+  justify-content: center;
+  gap: 6px;
+  margin: 16px auto 0;
+}
+.dbtn {
+  font-size: 1.4rem;
+  border: none;
+  border-radius: 10px;
+  background: #3a2416;
+  color: var(--text);
+  touch-action: none;
+  cursor: pointer;
+}
+.dbtn:active { background: var(--accent); color: #1c1c1c; }
+.up { grid-column: 2; grid-row: 1; }
+.left { grid-column: 1; grid-row: 2; }
+.down { grid-column: 2; grid-row: 2; }
+.right { grid-column: 3; grid-row: 2; }
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 12, 6, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px;
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+.overlay p { max-width: 320px; color: #d8d0b8; }
+.overlay button {
+  margin-top: 12px;
+  padding: 10px 24px;
+  font-size: 1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #1c1c1c;
+  cursor: pointer;
+}
+.monkey-stage {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.monkey { display: block; overflow: visible; }
+
+/* --- idle (splash screen) --- */
+.monkey-idle { animation: idleBob 2.4s ease-in-out infinite; }
+.monkey-idle .m-head { animation: idleSway 2.4s ease-in-out infinite; transform-origin: 100px 120px; }
+.monkey-idle .m-tail { animation: idleTail 2s ease-in-out infinite; transform-origin: 65px 175px; }
+.monkey-idle .m-arm-left { animation: idleArmL 2.4s ease-in-out infinite; transform-origin: 58px 120px; }
+.monkey-idle .m-arm-right { animation: idleArmR 2.4s ease-in-out infinite; transform-origin: 142px 120px; }
+.monkey-idle .m-eyes { animation: blink 4s infinite; transform-origin: 100px 82px; }
+
+@keyframes idleBob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes idleSway { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes idleTail { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+@keyframes idleArmL { 0%, 100% { transform: rotate(-4deg); } 50% { transform: rotate(4deg); } }
+@keyframes idleArmR { 0%, 100% { transform: rotate(4deg); } 50% { transform: rotate(-4deg); } }
+@keyframes blink { 0%, 90%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+
+/* --- cool (intro transition) --- */
+.monkey-cool { animation: coolGroove 0.9s ease-in-out infinite; }
+.monkey-cool .m-arm-left { animation: armPumpL 0.9s ease-in-out infinite; transform-origin: 58px 120px; }
+.monkey-cool .m-arm-right { animation: armPumpR 0.9s ease-in-out infinite; transform-origin: 142px 120px; }
+.monkey-cool .m-leg-left { animation: legKickL 0.9s ease-in-out infinite; transform-origin: 87px 184px; }
+.monkey-cool .m-leg-right { animation: legKickR 0.9s ease-in-out infinite; transform-origin: 113px 184px; }
+.monkey-cool .m-tail { animation: tailWag 0.6s ease-in-out infinite; transform-origin: 65px 175px; }
+
+@keyframes coolGroove { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-8px) rotate(3deg); } }
+@keyframes armPumpL { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-70deg); } }
+@keyframes armPumpR { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(70deg); } }
+@keyframes legKickL { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(20deg); } }
+@keyframes legKickR { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-20deg); } }
+@keyframes tailWag { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
+
+/* --- happy (level clear) --- */
+.monkey-happy { animation: happyJump 0.7s ease-in-out infinite; }
+.monkey-happy .m-arm-left { animation: cheerArmL 0.7s ease-in-out infinite; transform-origin: 58px 120px; }
+.monkey-happy .m-arm-right { animation: cheerArmR 0.7s ease-in-out infinite; transform-origin: 142px 120px; }
+.monkey-happy .m-leg-left { animation: kickLegL 0.7s ease-in-out infinite; transform-origin: 87px 184px; }
+.monkey-happy .m-leg-right { animation: kickLegR 0.7s ease-in-out infinite; transform-origin: 113px 184px; }
+.monkey-happy .m-tail { animation: tailWag 0.5s ease-in-out infinite; transform-origin: 65px 175px; }
+
+@keyframes happyJump {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-2px) scaleY(0.9); }
+  55% { transform: translateY(-22px) scaleY(1.08); }
+  80% { transform: translateY(0) scaleY(0.95); }
+}
+@keyframes cheerArmL { 0%, 100% { transform: rotate(-150deg); } 50% { transform: rotate(-172deg); } }
+@keyframes cheerArmR { 0%, 100% { transform: rotate(150deg); } 50% { transform: rotate(172deg); } }
+@keyframes kickLegL { 0%, 100% { transform: rotate(-25deg); } 50% { transform: rotate(15deg); } }
+@keyframes kickLegR { 0%, 100% { transform: rotate(25deg); } 50% { transform: rotate(-15deg); } }
+
+.m-sparkle {
+  position: absolute;
+  font-size: 1.4rem;
+  animation: sparkleTwinkle 1s ease-in-out infinite;
+}
+.m-sparkle-1 { top: 6%; left: -8%; animation-delay: 0s; }
+.m-sparkle-2 { top: -4%; right: -10%; animation-delay: 0.3s; }
+.m-sparkle-3 { bottom: 10%; left: 46%; animation-delay: 0.6s; }
+@keyframes sparkleTwinkle {
+  0%, 100% { opacity: 0.2; transform: scale(0.8) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.2) rotate(20deg); }
+}
+
+/* --- mean (game over) --- */
+.monkey-mean {
+  animation: meanShake 0.35s ease-in-out infinite;
+  filter: drop-shadow(0 0 14px rgba(255, 60, 60, 0.55));
+}
+.monkey-mean .m-arm-left { animation: armShakeL 0.3s ease-in-out infinite; transform-origin: 58px 120px; }
+.monkey-mean .m-arm-right { animation: armShakeR 0.3s ease-in-out infinite; transform-origin: 142px 120px; }
+.monkey-mean .m-brow-left, .monkey-mean .m-brow-right { animation: browTwitch 0.4s ease-in-out infinite; }
+.monkey-mean .m-flush { animation: flushPulse 0.6s ease-in-out infinite; }
+
+@keyframes meanShake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  20% { transform: translate(-4px, 1px) rotate(-3deg); }
+  40% { transform: translate(4px, -1px) rotate(3deg); }
+  60% { transform: translate(-4px, 1px) rotate(-2deg); }
+  80% { transform: translate(4px, -1px) rotate(2deg); }
+}
+@keyframes armShakeL { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+@keyframes armShakeR { 0%, 100% { transform: rotate(8deg); } 50% { transform: rotate(-8deg); } }
+@keyframes browTwitch { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
+@keyframes flushPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.55; } }
+
+.m-anger {
+  position: absolute;
+  top: -14px;
+  font-size: 1.3rem;
+  animation: angerPuff 1s ease-out infinite;
+}
+.m-anger-1 { left: 6%; animation-delay: 0s; }
+.m-anger-2 { right: 6%; animation-delay: 0.4s; }
+@keyframes angerPuff {
+  0% { opacity: 0; transform: translateY(0) scale(0.6); }
+  40% { opacity: 1; transform: translateY(-10px) scale(1); }
+  100% { opacity: 0; transform: translateY(-26px) scale(1.3); }
+}
+
+/* --- scale up on tablets (iPad) and desktop; the vh term in .wrap's
+   max-width still caps things on short/landscape viewports --- */
+@media (min-width: 640px) {
+  .wrap { max-width: min(640px, calc(80vh * 7 / 9)); }
+  h1 { font-size: 1.7rem; }
+  .hud { font-size: 1.1rem; }
+  .dpad {
+    grid-template-columns: repeat(3, 68px);
+    grid-template-rows: repeat(2, 68px);
+    gap: 8px;
+  }
+  .dbtn { font-size: 1.6rem; }
+  .monkey { width: 170px; height: 187px; }
+  .overlay p { max-width: 400px; }
+}
+
+@media (min-width: 1024px) {
+  .wrap { max-width: min(820px, calc(82vh * 7 / 9)); }
+  body { padding: 32px; }
+  h1 { font-size: 2rem; }
+  .hud { font-size: 1.25rem; }
+  .dpad {
+    grid-template-columns: repeat(3, 76px);
+    grid-template-rows: repeat(2, 76px);
+    gap: 10px;
+    margin-top: 22px;
+  }
+  .dbtn { font-size: 1.8rem; border-radius: 12px; }
+  .monkey { width: 200px; height: 220px; }
+  .overlay p { max-width: 460px; font-size: 1.05rem; }
+  #game { border-width: 6px; }
+}

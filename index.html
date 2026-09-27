@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Banana Dodge</title>
+<link rel="stylesheet" href="banana-dodge.css">
+</head>
+<body>
+<div class="wrap">
+  <div class="hud">
+    <div>Score: <span id="score">0</span></div>
+    <div>Level: <span id="level">1</span></div>
+    <div>Lives: <span id="lives">🐒🐒🐒</span></div>
+    <button id="musicBtn" class="icon-btn" title="Toggle music">🎵</button>
+  </div>
+  <div class="timerbar-outer"><div id="timerbar" class="timerbar-inner"></div></div>
+  <canvas id="game"></canvas>
+  <div class="dpad">
+    <button id="btn-up" class="dbtn up">▲</button>
+    <button id="btn-left" class="dbtn left">◀</button>
+    <button id="btn-down" class="dbtn down">▼</button>
+    <button id="btn-right" class="dbtn right">▶</button>
+  </div>
+</div>
+<div id="startOverlay" class="overlay">
+  <svg class="monkey monkey-idle" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
+    <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
+    <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+    <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+    <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
+    <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
+    <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+    <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+    <g class="m-head">
+      <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
+      <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
+      <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
+      <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
+      <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
+      <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
+      <rect class="m-brow m-brow-left" x="78" y="65" width="14" height="5" rx="2.5" fill="#5a3a1c"/>
+      <rect class="m-brow m-brow-right" x="108" y="65" width="14" height="5" rx="2.5" fill="#5a3a1c"/>
+      <g class="m-eyes">
+        <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
+        <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
+      </g>
+      <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
+      <path class="m-mouth" d="M85,108 Q100,116 115,108" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </g>
+  </svg>
+  <h1>Banana Dodge</h1>
+  <p>Cross the jungle lanes of flying bananas and rolling barrels, then squeeze through a gap between the gorillas. Fill all four gaps to clear the level.</p>
+  <button id="startBtn">Start Game</button>
+</div>
+<div id="introOverlay" class="overlay hidden">
+  <svg class="monkey monkey-cool" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
+    <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
+    <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+    <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+    <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
+    <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
+    <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+    <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+    <g class="m-head">
+      <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
+      <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
+      <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
+      <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
+      <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
+      <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
+      <g class="m-eyes">
+        <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
+        <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
+      </g>
+      <rect class="m-shades" x="72" y="76" width="56" height="14" rx="7" fill="#111"/>
+      <rect x="97" y="80" width="6" height="4" fill="#111"/>
+      <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
+      <path class="m-mouth" d="M88,110 Q100,102 112,110" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
+    </g>
+  </svg>
+  <h1>Let's go bananas!</h1>
+</div>
+<div id="levelClearOverlay" class="overlay hidden">
+  <div class="monkey-stage">
+    <svg class="monkey monkey-happy" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
+      <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
+      <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+      <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+      <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
+      <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
+      <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+      <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+      <g class="m-head">
+        <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
+        <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
+        <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
+        <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
+        <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
+        <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
+        <path class="m-brow m-brow-left" d="M78,68 Q85,60 92,66" stroke="#5a3a1c" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <path class="m-brow m-brow-right" d="M108,66 Q115,60 122,68" stroke="#5a3a1c" stroke-width="4" fill="none" stroke-linecap="round"/>
+        <g class="m-eyes">
+          <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
+          <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
+        </g>
+        <ellipse cx="72" cy="96" rx="7" ry="4" fill="#ff9d9d" opacity="0.7"/>
+        <ellipse cx="128" cy="96" rx="7" ry="4" fill="#ff9d9d" opacity="0.7"/>
+        <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
+        <path class="m-mouth" d="M80,102 Q100,128 120,102 Q100,114 80,102" stroke="#5a3a1c" stroke-width="2.5" fill="#5a2f14"/>
+      </g>
+    </svg>
+    <span class="m-sparkle m-sparkle-1">✨</span>
+    <span class="m-sparkle m-sparkle-2">✨</span>
+    <span class="m-sparkle m-sparkle-3">✨</span>
+  </div>
+  <h1 id="levelClearTitle">Level Clear!</h1>
+</div>
+<div id="gameOverOverlay" class="overlay hidden">
+  <div class="monkey-stage">
+    <svg class="monkey monkey-mean" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
+      <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
+      <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+      <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
+      <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
+      <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
+      <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+      <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
+      <g class="m-head">
+        <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
+        <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
+        <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
+        <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
+        <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
+        <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
+        <ellipse cx="100" cy="92" rx="30" ry="26" fill="#ff4d4d" class="m-flush" opacity="0.3"/>
+        <rect class="m-brow m-brow-left" x="76" y="70" width="16" height="5" rx="2.5" fill="#3a2410" transform="rotate(20 84 72)"/>
+        <rect class="m-brow m-brow-right" x="108" y="70" width="16" height="5" rx="2.5" fill="#3a2410" transform="rotate(-20 116 72)"/>
+        <g class="m-eyes">
+          <g class="m-eye"><circle cx="85" cy="84" r="7" fill="#fff"/><circle cx="86" cy="85" r="4" fill="#222"/></g>
+          <g class="m-eye"><circle cx="115" cy="84" r="7" fill="#fff"/><circle cx="114" cy="85" r="4" fill="#222"/></g>
+        </g>
+        <ellipse cx="100" cy="97" rx="5" ry="4" fill="#5a3a1c"/>
+        <path class="m-mouth" d="M85,114 Q100,102 115,114" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
+      </g>
+    </svg>
+    <span class="m-anger m-anger-1">💢</span>
+    <span class="m-anger m-anger-2">💢</span>
+  </div>
+  <h1>Game Over</h1>
+  <p id="finalScore"></p>
+  <button id="restartBtn">Play Again</button>
+</div>
+<script src="banana-dodge.js" defer></script>
+</body>
+</html>

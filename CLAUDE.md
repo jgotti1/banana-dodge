@@ -394,6 +394,10 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - No audio files — both sound effects and the background music loop
   are synthesized via WebAudio oscillators, no samples.
 
+## Portfolio card
+
+The README ends with a hidden JSON block (`<!-- portfolio-card:start ... portfolio-card:end -->`) that is machine-readable by a portfolio site. It contains the project title, description, live URL, GitHub link, thumbnail image, tech stack, and key features. Keep it in sync when the project features, tech stack, live URL, or deployed appearance changes. The JSON must remain valid and contain no `--` sequences (which would close the HTML comment early).
+
 ## Conventions if you extend this
 
 - The project is intentionally split into `index.html` (structure),

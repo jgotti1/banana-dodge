@@ -69,3 +69,23 @@ vercel --prod
 - `assets/`: the jungle background photo and the banana sprite.
 
 Built with plain HTML, CSS, and JavaScript. No frameworks.
+
+## Portfolio card
+
+The block below is machine-readable project info for a portfolio site (invisible on GitHub). Keep it in sync when the project, URL or tech changes. To build a card: read this JSON and use `title`, `tagline`/`description`, `thumbnail`, `tech`, and link to `liveUrl` and `repoUrl`.
+
+<!-- portfolio-card:start
+{
+  "title": "Gorilla Fun",
+  "category": "game",
+  "tagline": "Frogger meets Gorilla Tag: a jungle crossing game for kids where you dodge hazards and outmaneuver gorillas.",
+  "description": "Guide your brown gorilla across jungle lanes of flying bananas and tumbling sticks, dodge poop from three top-hat gorillas and a mischievous party-hat boss, and land in one of four gaps at the top. Fill all four gaps to clear the level and advance to the next. Each level gets faster. Inspired by classic Frogger and Gorilla Tag plush aesthetics, this game works on desktop, tablet, and mobile with responsive canvas sizing.",
+  "liveUrl": "https://banana-dodge.vercel.app",
+  "repoUrl": "https://github.com/jgotti1/banana-dodge",
+  "thumbnail": "https://raw.githubusercontent.com/jgotti1/banana-dodge/main/docs/preview.jpg",
+  "tech": ["HTML5", "CSS", "JavaScript", "Canvas 2D", "WebAudio"],
+  "features": ["Responsive canvas scaling to any screen size", "Synthesized sound effects and dynamic music via Web Audio", "High score and level tracking with localStorage", "Touch d-pad and keyboard controls", "Progressive difficulty with level-based speed scaling", "Smooth sprite-based movement system"],
+  "platforms": ["desktop", "tablet", "mobile"],
+  "status": "live"
+}
+portfolio-card:end -->

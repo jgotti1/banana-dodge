@@ -1,0 +1,31 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @media (prefers-color-scheme: dark) {
+        .bg { fill: #2d5a2d; }
+        .banana-main { fill: #ffd700; }
+        .banana-dark { fill: #daa520; }
+      }
+      @media (prefers-color-scheme: light) {
+        .bg { fill: #4a7c4e; }
+        .banana-main { fill: #ffed4e; }
+        .banana-dark { fill: #e6c200; }
+      }
+    </style>
+  </defs>
+
+  <!-- Rounded square background -->
+  <rect class="bg" x="4" y="4" width="56" height="56" rx="12" ry="12"/>
+
+  <!-- Banana -->
+  <g>
+    <!-- Main banana body -->
+    <path class="banana-main" d="M 20 48 Q 32 18, 44 16 Q 48 16, 50 20 Q 48 22, 44 22 Q 34 24, 22 52 Q 20 54, 18 52 Q 18 50, 20 48 Z"/>
+
+    <!-- Highlight for depth -->
+    <path class="banana-dark" d="M 22 46 Q 30 28, 40 26" fill="none" stroke="currentColor" stroke-width="2" opacity="0.4"/>
+
+    <!-- Banana tip shadow -->
+    <ellipse class="banana-dark" cx="48" cy="18" rx="3" ry="2" opacity="0.3"/>
+  </g>
+</svg>

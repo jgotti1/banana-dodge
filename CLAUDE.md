@@ -52,7 +52,8 @@ The game lives in three files:
   `<head>` with charset/viewport meta, a `<link>` to the stylesheet) plus
   the body markup: the HUD, the `<canvas id="game">`, the on-screen d-pad,
   three full-screen overlays (`#startOverlay`, `#introOverlay`,
-  `#gameOverOverlay`), the non-blocking `#levelClearOverlay` toast, and
+  `#gameOverOverlay`), the non-blocking level-clear/reward toasts, the timed
+  power-up status clock, and
   the click-through `<canvas id="confetti">`. The browser tab and splash
   screen use the current game name, "Gorilla Fun"; the legacy source
   filenames and deployment URL remain unchanged.
@@ -224,6 +225,21 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   simultaneous two-to-three-object jump in every lane. Both multipliers
   compound without a cap. `nextLevel()` itself doesn't run until the
   level-clear cutscene finishes; see Level-clear scene below.
+- **Pickups**: `spawnLevelPickups()` places one golden banana and one power
+  bolt on hazard rows at the beginning of each level. They persist across
+  lives but disappear once collected. `finishMove()` calls `checkPickups()`
+  after committing each move. The sparkling, oversized golden banana is
+  visually distinct from normal hazards and awards `GOLDEN_BANANA_BONUS`
+  (100 points), shown in `#featureToast`. The dark circular power token has a
+  bright green lightning bolt; collecting it sets `powerTimer` to 15 seconds.
+  While active, `hazardHit()` returns false, the player has a green aura, and
+  `#powerStatus` displays a tenths-of-a-second countdown. The effect freezes
+  during the level-clear scene and ends when the player fills a top slot, when
+  the next level begins, or at game over. Only one bolt spawns per level, and
+  collecting it removes it for the rest of that level. While protection is
+  active, `setMusicMode('power')` runs the faster `POWER_PATTERN`; expiration
+  or a newly filled top slot restores normal music (the final slot then starts
+  the existing level-clear chase music).
 - **Controls**: arrow keys / WASD (`keyMap`), plus an on-screen
   touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`. Enter
   or Space clicks Play (splash) or Play Again (game over) when that

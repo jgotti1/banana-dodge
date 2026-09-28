@@ -15,6 +15,9 @@
     <div>Lives: <span id="lives"></span></div>
     <button id="musicBtn" class="icon-btn" title="Toggle music">🎵</button>
   </div>
+  <div id="powerStatus" class="power-status hidden" aria-live="polite">
+    🛡️ PROTECTED <span class="power-clock">◷ <span id="powerTimer">0.0</span>s left</span>
+  </div>
   <div class="timerbar-outer"><div id="timerbar" class="timerbar-inner"></div></div>
   <canvas id="game"></canvas>
   <div class="dpad">
@@ -86,6 +89,7 @@
   </div>
   <h1 id="levelClearTitle">Level Clear!</h1>
 </div>
+<div id="featureToast" class="feature-toast hidden" aria-live="polite"></div>
 <div id="gameOverOverlay" class="overlay gameover hidden">
   <div class="gameover-card">
     <p class="gameover-kicker">Game Over</p>

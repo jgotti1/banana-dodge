@@ -11,6 +11,8 @@
   const LIFE_TIME_MAX = 90; // seconds
   const LEVEL_SPEED_GROWTH = 1.10;
   const LEVEL_HAZARD_COUNT_GROWTH = 1.15;
+  const GOLDEN_BANANA_BONUS = 100;
+  const POWER_UP_DURATION = 15; // seconds of collision protection
 
   // Gorilla poop: a random gorilla shakes (telegraph), then drops poop that
   // falls straight down its column. It splats at the top of the start row,
@@ -184,6 +186,10 @@
   let nextDropIn = 0;
   const gaps = GAP_COLS.map(col => ({ col, filled: false, cheer: 0 }));
   let monkey, moveLock, level, score, lives, lifeTime, gameRunning;
+  let goldenBanana = null;
+  let powerBolt = null;
+  let powerTimer = 0;
+  let featureToastTimer = null;
   let deathTimer = 0;
   let lastTime = 0;
   // null when no cutscene is playing; see startLevelClearScene().
@@ -219,6 +225,8 @@
   const sfxHighScore = () => [784, 988, 1175, 1568, 1976].forEach((f, i) => beep(f, 0.14, 'triangle', 0.06, i * 0.08));
   const sfxLevel = () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.12, 'triangle', 0.06, i * 0.1));
   const sfxExtraLife = () => [660, 880, 1108].forEach((f, i) => beep(f, 0.1, 'square', 0.05, i * 0.07));
+  const sfxPickup = () => [659, 880, 1175].forEach((f, i) => beep(f, 0.1, 'triangle', 0.055, i * 0.07));
+  const sfxPowerUp = () => [220, 440, 880, 1320].forEach((f, i) => beep(f, 0.12, 'square', 0.05, i * 0.06));
   const sfxGameOver = () => {
     [400, 300, 200, 150].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.07, i * 0.18));
     beep(90, 0.6, 'sawtooth', 0.08, 4 * 0.18); // final low "womp" for a sad-trombone finish
@@ -389,7 +397,13 @@
   const CHASE_PATTERN = [0, 2, 4, 2, 1, 3, 5, 3, 0, 2, 4, 2, 1, 3, 5, 4];
   const CHASE_NOTE_MS = 130;
   const CHASE_BASS_FREQ = 98; // G2 oom-pah pulse under the gallop
-  let musicMode = 'normal'; // 'normal' | 'chase'
+  // Fast, rising power-up riff. It deliberately uses a different scale and
+  // a tighter beat than both the normal tune and level-clear chase music.
+  const POWER_SCALE = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5]; // C D E G A C
+  const POWER_PATTERN = [0, 2, 4, 5, 4, 2, 1, 3, 5, 4, 3, 1, 2, 4, 5, 3];
+  const POWER_NOTE_MS = 95;
+  const POWER_BASS_FREQ = 130.81; // C3 driving pulse
+  let musicMode = 'normal'; // 'normal' | 'chase' | 'power'
   let musicIndex = 0;
   let musicTimer = null;
   let musicEnabled = true;
@@ -399,6 +413,15 @@
 
   function playMusicStep() {
     if (!musicEnabled || !audioCtx) return;
+    if (musicMode === 'power') {
+      const step = musicIndex % POWER_PATTERN.length;
+      const freq = POWER_SCALE[POWER_PATTERN[step]];
+      beep(freq, 0.075, 'square', step % 4 === 0 ? 0.055 : 0.038);
+      if (step % 2 === 0) beep(POWER_BASS_FREQ, 0.065, 'sawtooth', 0.032);
+      if (step % 4 === 3) beep(freq * 2, 0.045, 'triangle', 0.022);
+      musicIndex++;
+      return;
+    }
     if (musicMode === 'chase') {
       const step = musicIndex % CHASE_PATTERN.length;
       const freq = CHASE_SCALE[CHASE_PATTERN[step]];
@@ -419,9 +442,15 @@
     musicIndex++;
   }
 
+  function musicStepMs() {
+    if (musicMode === 'power') return POWER_NOTE_MS;
+    if (musicMode === 'chase') return CHASE_NOTE_MS;
+    return NOTE_MS;
+  }
+
   function startMusic() {
     if (musicTimer) return;
-    musicTimer = setInterval(playMusicStep, musicMode === 'chase' ? CHASE_NOTE_MS : NOTE_MS);
+    musicTimer = setInterval(playMusicStep, musicStepMs());
   }
 
   function stopMusic() {
@@ -429,17 +458,15 @@
     musicTimer = null;
   }
 
-  // Switches the looping background music between the normal tune and the
-  // level-clear intermission's circus-chase riff, restarting the interval
-  // at that mode's tempo so the gallop is actually faster, not just a
-  // different scale played at the normal pace.
+  // Switches the looping background music between normal, level-clear chase,
+  // and protected modes, restarting the interval at the selected tempo.
   function setMusicMode(mode) {
     if (musicMode === mode) return;
     musicMode = mode;
     musicIndex = 0;
     if (musicTimer) {
       clearInterval(musicTimer);
-      musicTimer = setInterval(playMusicStep, mode === 'chase' ? CHASE_NOTE_MS : NOTE_MS);
+      musicTimer = setInterval(playMusicStep, musicStepMs());
     }
   }
 
@@ -554,6 +581,76 @@
       }
     };
     requestAnimationFrame(step);
+  }
+
+  // --- level pickups ---
+  function randomPickupPosition() {
+    const rows = [2, 3, 5, 6];
+    return {
+      col: Math.floor(Math.random() * COLS),
+      row: rows[Math.floor(Math.random() * rows.length)],
+      radius: 0.28,
+    };
+  }
+
+  function spawnLevelPickups() {
+    goldenBanana = randomPickupPosition();
+    powerBolt = randomPickupPosition();
+    if (powerBolt.row === goldenBanana.row && powerBolt.col === goldenBanana.col) {
+      powerBolt.col = (powerBolt.col + 2) % COLS;
+    }
+    powerTimer = 0;
+    updatePowerStatus();
+  }
+
+  function showFeatureToast(message, isPower = false) {
+    const toast = document.getElementById('featureToast');
+    toast.textContent = message;
+    toast.classList.toggle('power-flash', isPower);
+    toast.classList.remove('hidden');
+    clearTimeout(featureToastTimer);
+    featureToastTimer = setTimeout(() => toast.classList.add('hidden'), 1900);
+  }
+
+  function updatePowerStatus() {
+    const status = document.getElementById('powerStatus');
+    const active = powerTimer > 0;
+    status.classList.toggle('hidden', !active);
+    document.getElementById('powerTimer').textContent = Math.max(0, powerTimer).toFixed(1);
+  }
+
+  function endPowerUp() {
+    const wasActive = powerTimer > 0;
+    powerTimer = 0;
+    updatePowerStatus();
+    if (wasActive && musicMode === 'power') setMusicMode('normal');
+  }
+
+  function pickupHit(pickup) {
+    if (!pickup) return false;
+    const pos = currentMonkeyPos();
+    const dx = (pickup.col - pos.col) * CELL_W;
+    const dy = (pickup.row - pos.row) * CELL_H;
+    return Math.hypot(dx, dy) < (pickup.radius + MONKEY_RADIUS) * SPRITE;
+  }
+
+  function checkPickups() {
+    if (pickupHit(goldenBanana)) {
+      score += GOLDEN_BANANA_BONUS;
+      goldenBanana = null;
+      sfxPickup();
+      showFeatureToast(`🌟 GOLDEN BANANA  +${GOLDEN_BANANA_BONUS} POINTS!`);
+      updateHud();
+      recordProgress();
+    }
+    if (pickupHit(powerBolt)) {
+      powerBolt = null;
+      powerTimer = POWER_UP_DURATION;
+      sfxPowerUp();
+      showFeatureToast(`⚡ PROTECTED FOR ${POWER_UP_DURATION} SECONDS!`, true);
+      updatePowerStatus();
+      setMusicMode('power');
+    }
   }
 
   // --- level / hazard setup ---
@@ -725,6 +822,7 @@
     gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
+    spawnLevelPickups();
     spawnHazards();
     gameRunning = true;
     bestScoreAtRunStart = best.score;
@@ -742,6 +840,7 @@
     gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
+    spawnLevelPickups();
     spawnHazards();
     updateHud();
     recordProgress();
@@ -866,6 +965,7 @@
 
   function gameOver() {
     gameRunning = false;
+    endPowerUp();
     stopMusic();
     if (beatBestThisRun) {
       sfxHighScore();
@@ -919,11 +1019,13 @@
     monkey.col = monkey.animTo.col;
     monkey.row = monkey.animTo.row;
     moveLock = false;
+    checkPickups();
     if (monkey.row === 0) {
       const gap = gaps.find(g => g.col === monkey.col);
       if (gap && !gap.filled) {
         const parkedPlayers = gaps.filter(other => other.filled);
         gap.filled = true;
+        endPowerUp();
         parkedPlayers.forEach(other => { other.cheer = PARKED_CHEER_TIME; });
         score += 50;
         sfxScore();
@@ -967,6 +1069,7 @@
   }
 
   function hazardHit() {
+    if (powerTimer > 0) return false;
     const pos = currentMonkeyPos();
     const row = Math.round(pos.row);
     for (const h of hazards) {
@@ -1462,6 +1565,62 @@
     g.restore();
   }
 
+  function drawGoldenBananaPickup(g, pickup) {
+    if (!pickup) return;
+    const cx = (pickup.col + 0.5) * CELL_W;
+    const cy = (pickup.row + 0.5) * CELL_H;
+    const pulse = 1 + Math.sin(performance.now() / 150) * 0.08;
+    g.save();
+    g.translate(cx, cy);
+    g.shadowColor = '#fff176';
+    g.shadowBlur = SPRITE * 0.35;
+    g.fillStyle = 'rgba(255, 211, 40, 0.32)';
+    g.strokeStyle = '#fff59d';
+    g.lineWidth = SPRITE * 0.035;
+    g.beginPath();
+    g.arc(0, 0, SPRITE * 0.38 * pulse, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#fff8b0';
+    g.font = `bold ${SPRITE * 0.18}px sans-serif`;
+    g.fillText('★', -SPRITE * 0.3, -SPRITE * 0.27);
+    g.fillText('★', SPRITE * 0.29, -SPRITE * 0.2);
+    g.restore();
+    g.save();
+    g.filter = 'saturate(1.7) brightness(1.2)';
+    drawBanana(g, cx, cy, SPRITE * 0.72 * pulse, 1, -0.15);
+    g.restore();
+  }
+
+  function drawPowerBoltPickup(g, pickup) {
+    if (!pickup) return;
+    const cx = (pickup.col + 0.5) * CELL_W;
+    const cy = (pickup.row + 0.5) * CELL_H;
+    const pulse = 1 + Math.sin(performance.now() / 120) * 0.08;
+    g.save();
+    g.translate(cx, cy);
+    g.shadowColor = '#39ff74';
+    g.shadowBlur = SPRITE * 0.32;
+    g.fillStyle = '#03240e';
+    g.strokeStyle = '#42ff7b';
+    g.lineWidth = SPRITE * 0.055;
+    g.beginPath();
+    g.arc(0, 0, SPRITE * 0.34 * pulse, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    g.fillStyle = '#58ff88';
+    g.beginPath();
+    g.moveTo(SPRITE * 0.05, -SPRITE * 0.25);
+    g.lineTo(-SPRITE * 0.15, SPRITE * 0.02);
+    g.lineTo(-SPRITE * 0.01, SPRITE * 0.02);
+    g.lineTo(-SPRITE * 0.08, SPRITE * 0.27);
+    g.lineTo(SPRITE * 0.18, -SPRITE * 0.06);
+    g.lineTo(SPRITE * 0.04, -SPRITE * 0.06);
+    g.closePath();
+    g.fill();
+    g.restore();
+  }
+
   // The branch the boss walks on, in the band above the goal row. The band's
   // own background is the selected level image (drawn before this runs);
   // this just adds the branch and leaf clusters on top of it.
@@ -1563,6 +1722,9 @@
     });
     ctx.fillStyle = '#fff'; // opaque again before emoji hazards
 
+    drawGoldenBananaPickup(ctx, goldenBanana);
+    drawPowerBoltPickup(ctx, powerBolt);
+
     // hazards
     const HAZARD_EMOJI = { poop: '💩' };
     hazards.forEach(h => {
@@ -1588,6 +1750,17 @@
 
     // monkey
     const pos = currentMonkeyPos();
+    if (powerTimer > 0) {
+      const pulse = 1 + Math.sin(performance.now() / 90) * 0.08;
+      ctx.strokeStyle = 'rgba(55, 255, 115, 0.9)';
+      ctx.lineWidth = SPRITE * 0.055;
+      ctx.shadowColor = '#39ff74';
+      ctx.shadowBlur = SPRITE * 0.24;
+      ctx.beginPath();
+      ctx.arc((pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H, SPRITE * 0.48 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
     drawPlushGorilla(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H + PLUSH_CENTER_Y * playerSize(), playerSize(), PLAYER_COLORS, {
       // sideways steps slide flat; only row changes bounce
       hop: monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1,
@@ -1772,6 +1945,11 @@
         updateLevelClearScene(dt);
       } else {
         updateHazards(dt);
+        if (powerTimer > 0) {
+          powerTimer = Math.max(0, powerTimer - dt);
+          updatePowerStatus();
+          if (powerTimer === 0) setMusicMode('normal');
+        }
         gaps.forEach(g => { g.cheer = Math.max(0, g.cheer - dt); });
 
         if (deathTimer > 0) {

@@ -24,6 +24,13 @@ without distorting anything.
 - **Goal:** land on an empty gap in the top row (+50 points). Gorillas and
   already-filled gaps block you. Gorillas already parked in other gaps clap
   and make chimp sounds when you arrive.
+- **Golden banana:** each level has one larger sparkling golden banana worth
+  100 bonus points. Collecting it flashes the points you earned.
+- **Power-up:** each level offers one dark token with a green lightning bolt.
+  Collect it for 15 seconds of collision protection. A protected clock above
+  the timer bar counts down the remaining time, and protection ends immediately
+  when you land in a top slot. The soundtrack switches to a faster, energetic
+  power-up theme while protection is active, then returns to normal.
 - **Watch the gorillas:** the three top-hat gorillas pace back and forth
   above the top row. Every few seconds one stops, beats its chest, and
   drops poop straight down from wherever it's standing, and the
@@ -85,12 +92,12 @@ The block below is machine-readable project info for a portfolio site (invisible
   "title": "Gorilla Fun",
   "category": "game",
   "tagline": "Frogger meets Gorilla Tag: a jungle crossing game for kids where you dodge hazards and outmaneuver gorillas.",
-  "description": "Guide your brown gorilla across jungle lanes of flying bananas and tumbling sticks, dodge poop from three top-hat gorillas and a mischievous party-hat boss, and land in one of four gaps at the top. Fill all four gaps to clear the level and advance to the next. Each level gets faster. Inspired by classic Frogger and Gorilla Tag plush aesthetics, this game works on desktop, tablet, and mobile with responsive canvas sizing.",
+  "description": "Guide your brown gorilla across jungle lanes of flying bananas and tumbling sticks, collect golden bananas and timed lightning power-ups, dodge poop from three top-hat gorillas and a mischievous party-hat boss, and land in one of four gaps at the top. Fill all four gaps to clear the level and advance to the next. Each level gets faster. Inspired by classic Frogger and Gorilla Tag plush aesthetics, this game works on desktop, tablet, and mobile with responsive canvas sizing.",
   "liveUrl": "https://banana-dodge.vercel.app",
   "repoUrl": "https://github.com/jgotti1/banana-dodge",
   "thumbnail": "https://raw.githubusercontent.com/jgotti1/banana-dodge/main/docs/preview.jpg",
   "tech": ["HTML5", "CSS", "JavaScript", "Canvas 2D", "WebAudio"],
-  "features": ["Responsive canvas scaling to any screen size", "Synthesized sound effects and dynamic music via Web Audio", "High score and level tracking with localStorage", "Touch d-pad and keyboard controls", "Progressive difficulty with level-based speed scaling", "Smooth sprite-based movement system"],
+  "features": ["Responsive canvas scaling to any screen size", "Golden banana bonus collectibles", "Timed green-lightning collision-protection power-ups", "Synthesized sound effects and dynamic music via Web Audio", "High score and level tracking with localStorage", "Touch d-pad and keyboard controls", "Progressive difficulty with level-based speed scaling", "Smooth sprite-based movement system"],
   "platforms": ["desktop", "tablet", "mobile"],
   "status": "live"
 }

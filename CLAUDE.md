@@ -106,20 +106,35 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   and hazard spacing identical to the original square-cell game when
   the board is stretched wide. Don't switch speed back to columns/sec:
   that made hazards 2–3× faster on iPad landscape and desktop.
+- **Gorilla patrol**: the three top-hat gorillas are tracked in the
+  `gorillas` array (one entry per `GORILLA_COLS` value), each holding
+  `homeCol` (its fixed collision/scoring column), a current `x`
+  (patrol position, in column units), `dir`, and `shake`.
+  `updateGorillas()` walks each idle gorilla back and forth within
+  `±GORILLA_PATROL_RANGE` of `homeCol` at `GORILLA_PATROL_SPEED`
+  (sprite widths/sec), turning at the ends — the same pattern as
+  `updateBoss()`. **This is visual only**: `tryMove()` still blocks
+  entry to row 0 using the fixed `GORILLA_COLS`, not each gorilla's
+  live `x`, so gap difficulty/scoring is unchanged by this feature.
+  Don't change that collision check to track `x` without deciding
+  that's an intentional difficulty change.
 - **Gorilla poop**: `updateGorillas()` (called from `updateHazards()`)
   counts down `nextDropIn` (random 2.5–6s), then picks a random
-  non-shaking gorilla and sets `gorillaShake[col]` to 0.7s as a
-  telegraph: the gorilla chest-beats (see Gorilla sprites) while
-  `sfxGorillaRoar()` and `sfxChestBeat()` play. When the
-  shake ends it pushes a `type: 'poop'` object into the regular
-  `hazards` array. Poop moves **vertically**: `x` is its column, `y` its
-  row-center position, `speed` in rows/sec (scaled by `speedMul()`).
-  It's removed at `POOP_LAND_Y` (top edge of the start row), so the
-  start row is always safe; the monkey respawns at col 3, directly
-  under the middle gorilla, so this matters. `spawnHazards()` clears
-  poop and resets the shake/drop timers each run/level. Code that
-  loops over `hazards` must branch on `type === 'poop'` because poop
-  has no `row`/`dir`.
+  non-shaking gorilla and sets its `shake` to 0.7s as a telegraph: the
+  gorilla chest-beats (see Gorilla sprites) while `sfxGorillaRoar()`
+  and `sfxChestBeat()` play, and **pauses its patrol** for the same
+  reason the boss stands still during his windup. When the shake ends
+  it pushes a `type: 'poop'` object into the regular `hazards` array
+  at that gorilla's *current* `x` (not `homeCol`), so the drop point
+  visually follows wherever it wandered to. Poop moves **vertically**:
+  `x` is its column, `y` its row-center position, `speed` in rows/sec
+  (scaled by `speedMul()`). It's removed at `POOP_LAND_Y` (top edge of
+  the start row), so the start row is always safe; the monkey respawns
+  at col 3, directly under the middle gorilla, so this matters.
+  `spawnHazards()` rebuilds `gorillas` (resetting patrol position,
+  direction, and shake) and resets the drop timer each run/level. Code
+  that loops over `hazards` must branch on `type === 'poop'` because
+  poop has no `row`/`dir`.
 - **Boss gorilla**: a bigger party-hat gorilla modeled on the owner's
   Gorilla Tag plush reference (rounded black body, grey ears/face/chest,
   big black-rimmed white eyes, long arms stretched out, rainbow zig-zag
@@ -288,8 +303,9 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   - **The three goal-row gorillas**: black `HAT_PLUSH_COLORS` with
     `hat: true`, drawn at 1.375 × `SPRITE`, standing on the bottom of row
     0 with the hat reaching up into the boss band (the boss draws in
-    front of it when he walks past). `beat` is `GORILLA_SHAKE_TIME -
-    gorillaShake[col]` while shaking, else -1.
+    front of it when he walks past), at each gorilla's current patrol
+    `x` (see Gorilla patrol) rather than its fixed `homeCol`. `beat` is
+    `GORILLA_SHAKE_TIME - g.shake` while shaking, else -1.
   - **The boss**: `drawBoss()`, see Boss gorilla.
   The owner asked specifically that the eyes never be covered: brows sit
   just above the eyes, and nothing (hats, shades) overlaps them. The

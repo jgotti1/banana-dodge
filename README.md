@@ -24,9 +24,10 @@ without distorting anything.
 - **Goal:** land on an empty gap in the top row (+50 points). Gorillas and
   already-filled gaps block you. Gorillas already parked in other gaps clap
   and make chimp sounds when you arrive.
-- **Watch the gorillas:** every few seconds one of the three top-hat
-  gorillas beats its chest and drops poop straight down its column, and
-  the party-hat boss walking the branch above them winds up and throws
+- **Watch the gorillas:** the three top-hat gorillas pace back and forth
+  above the top row. Every few seconds one stops, beats its chest, and
+  drops poop straight down from wherever it's standing, and the
+  party-hat boss walking the branch above them winds up and throws
   some too. Don't be under it. The bottom row is always safe.
 - **Lives:** you have 3. Getting hit by a banana, stick, or poop, or
   running out the 90-second crossing timer, costs a life (your gorilla spins

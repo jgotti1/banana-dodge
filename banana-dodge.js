@@ -23,6 +23,13 @@
   const DROP_INTERVAL_MAX = 6;
   const DEATH_PAUSE = 0.9; // seconds the X-eyed player stays on screen after a hit
 
+  // Enemy gorillas patrol side to side around their home column (visual
+  // only — collision/scoring still block the fixed GORILLA_COLS, see
+  // tryMove(), so gameplay difficulty doesn't change). A gorilla pauses its
+  // patrol while chest-beating, same as the boss pausing during his windup.
+  const GORILLA_PATROL_RANGE = 0.6; // columns each gorilla wanders from home
+  const GORILLA_PATROL_SPEED = 0.5; // sprite widths per second
+
   // Boss gorilla: a bigger party-hat gorilla on a branch in a band above
   // the goal row. He waddles side to side, and every few seconds stops,
   // lifts the poop he's holding overhead, and throws it straight down.
@@ -140,7 +147,10 @@
   const MAX_CELL_W_RATIO = 3;
   const MAX_CELL_H_RATIO = 1.7;
   let hazards = [];
-  let gorillaShake = {}; // gorilla col -> seconds of shaking left
+  // One entry per enemy gorilla: homeCol is its fixed collision/scoring
+  // column (GORILLA_COLS), x is its current patrol position, shake is
+  // seconds of chest-beat warning left before its poop drops.
+  let gorillas = [];
   let boss = { x: 3, dir: 1, windup: 0, reload: 0, nextThrowIn: 4 };
   let nextDropIn = 0;
   const gaps = GAP_COLS.map(col => ({ col, filled: false, cheer: 0 }));
@@ -514,7 +524,12 @@
         });
       }
     });
-    gorillaShake = {};
+    gorillas = GORILLA_COLS.map(col => ({
+      homeCol: col,
+      x: col,
+      dir: Math.random() < 0.5 ? -1 : 1,
+      shake: 0,
+    }));
     nextDropIn = randomDropInterval();
     boss = {
       x: (BOSS_MIN_X + BOSS_MAX_X) / 2,
@@ -575,27 +590,35 @@
   function updateGorillas(dt) {
     nextDropIn -= dt;
     if (nextDropIn <= 0) {
-      const idle = GORILLA_COLS.filter(col => !(gorillaShake[col] > 0));
+      const idle = gorillas.filter(g => !(g.shake > 0));
       if (idle.length) {
-        gorillaShake[idle[Math.floor(Math.random() * idle.length)]] = GORILLA_SHAKE_TIME;
+        idle[Math.floor(Math.random() * idle.length)].shake = GORILLA_SHAKE_TIME;
         sfxGorillaRoar();
         sfxChestBeat();
       }
       nextDropIn = randomDropInterval();
     }
-    for (const col of GORILLA_COLS) {
-      if (!(gorillaShake[col] > 0)) continue;
-      gorillaShake[col] -= dt;
-      if (gorillaShake[col] <= 0) {
-        hazards.push({
-          type: 'poop',
-          x: col,
-          y: 0.4,
-          radius: POOP_RADIUS,
-          speed: POOP_FALL_SPEED * speedMul(),
-        });
-        sfxPlop();
+    for (const g of gorillas) {
+      if (g.shake > 0) {
+        // stands still while chest-beating, same as the boss during windup
+        g.shake -= dt;
+        if (g.shake <= 0) {
+          hazards.push({
+            type: 'poop',
+            x: g.x,
+            y: 0.4,
+            radius: POOP_RADIUS,
+            speed: POOP_FALL_SPEED * speedMul(),
+          });
+          sfxPlop();
+        }
+        continue;
       }
+      g.x += g.dir * GORILLA_PATROL_SPEED * (SPRITE / CELL_W) * dt;
+      const min = g.homeCol - GORILLA_PATROL_RANGE;
+      const max = g.homeCol + GORILLA_PATROL_RANGE;
+      if (g.x < min) { g.x = min; g.dir = 1; }
+      if (g.x > max) { g.x = max; g.dir = -1; }
     }
   }
 
@@ -1332,13 +1355,15 @@
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
 
-    // enemy gorillas; a shaking gorilla is chest-beating before its drop
-    GORILLA_COLS.forEach(col => {
-      const beat = gorillaShake[col] > 0 ? GORILLA_SHAKE_TIME - gorillaShake[col] : -1;
+    // enemy gorillas; a shaking gorilla is chest-beating before its drop.
+    // Drawn at its current patrol x, not its fixed home column — collision
+    // still blocks the home column (see tryMove()).
+    gorillas.forEach(g => {
+      const beat = g.shake > 0 ? GORILLA_SHAKE_TIME - g.shake : -1;
       // A bit bigger than the player; hands rest on the bottom of row 0 and
       // the hat pokes up into the boss band.
       const size = SPRITE * 1.375;
-      drawPlushGorilla(ctx, (col + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true });
+      drawPlushGorilla(ctx, (g.x + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true });
     });
 
     // gaps

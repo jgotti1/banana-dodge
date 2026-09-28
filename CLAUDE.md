@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# Banana Dodge
+# Gorilla Fun
 
 A Frogger-style browser game: a monkey crosses jungle lanes of thrown
 bananas and tumbling sticks, dodging poop the three gorillas randomly
@@ -53,7 +53,9 @@ The game lives in three files:
   the body markup: the HUD, the `<canvas id="game">`, the on-screen d-pad,
   three full-screen overlays (`#startOverlay`, `#introOverlay`,
   `#gameOverOverlay`), the non-blocking `#levelClearOverlay` toast, and
-  the click-through `<canvas id="confetti">`.
+  the click-through `<canvas id="confetti">`. The browser tab and splash
+  screen use the current game name, "Gorilla Fun"; the legacy source
+  filenames and deployment URL remain unchanged.
 - `banana-dodge.css` — all styling (jungle color theme, HUD layout,
   d-pad grid, overlay screens, monkey-animation keyframes).
 - `banana-dodge.js` — all game logic, wrapped in a single IIFE.
@@ -164,6 +166,7 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   by `drawImageCover()` across the whole canvas (band + grid) before
   anything else, scaled to cover and cropped rather than stretched, so
   the photo doesn't distort the way lane colors are allowed to stretch.
+  The source screenshot's bottom-left camera overlay has been removed.
   `drawBossBand()` no longer paints its own flat gradient — just the
   branch and leaf clusters on top of the photo. `LANE_COLORS` are
   translucent (`rgba(...)`) rather than opaque, and lighter than the raw

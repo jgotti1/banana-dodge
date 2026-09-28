@@ -1,4 +1,4 @@
-# Banana Dodge
+# Gorilla Fun
 
 **Play it: https://banana-dodge.vercel.app**
 
@@ -22,7 +22,8 @@ without distorting anything.
   Play Again.
 - **Move:** arrow keys or WASD, or the on-screen d-pad on touch devices.
 - **Goal:** land on an empty gap in the top row (+50 points). Gorillas and
-  already-filled gaps block you.
+  already-filled gaps block you. Gorillas already parked in other gaps clap
+  and make chimp sounds when you arrive.
 - **Watch the gorillas:** every few seconds one of the three top-hat
   gorillas beats its chest and drops poop straight down its column, and
   the party-hat boss walking the branch above them winds up and throws
@@ -31,8 +32,8 @@ without distorting anything.
   running out the 90-second crossing timer, costs a life (your gorilla spins
   with ✖✖ eyes before respawning).
 - **High scores:** your best score and highest level are saved in your
-  browser and shown on the start and game-over screens. Beat your best
-  mid-game and you get confetti.
+  browser and shown on the start and game-over screens. If you beat your
+  best, the game-over screen celebrates with a message and confetti.
 - **Music:** toggle with the 🎵 button in the top-right.
 
 ## Running it locally

@@ -392,38 +392,56 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   listener that adds `hidden` back — independent of and layered on top
   of the canvas cutscene below, which is what actually holds up
   `nextLevel()` now.
-- **Level-clear scene**: a Pac-Man-style "parade" that plays on the game
-  canvas itself between clearing a level and `nextLevel()` running: the
-  boss gorilla runs off the right edge, then the three top-hat gorillas
-  follow in a staggered chase, then the player — now carrying a small
-  wooden "NEXT LEVEL" sign (`drawLevelSign()`) — runs off after them.
+- **Level-clear scene**: a Pac-Man-style intermission between clearing a
+  level and `nextLevel()` running, in three phases
+  (`levelClearScene.phase`: `'fadeOut'` → `'parade'` → `'fadeIn'`).
   `finishMove()` calls `startLevelClearScene(level)` instead of
-  `nextLevel()` directly when `gaps.every(g => g.filled)`; it clears
-  `hazards`, resets any gorilla mid-chest-beat / boss mid-windup pose so
-  nobody runs off frozen in it, and builds a `levelClearScene` object
-  with one `{x, delay, done}` entry per actor (boss, each gorilla,
-  player), staggered by `LEVEL_SCENE_BOSS_HEAD_START` /
-  `LEVEL_SCENE_GORILLA_GAP` / `LEVEL_SCENE_PLAYER_GAP`.
-  `updateLevelClearScene()` — called from `loop()`, **not** a
-  `setTimeout`, the same pattern as `deathTimer`/`DEATH_PAUSE` — advances
-  each actor past its delay at `LEVEL_SCENE_RUN_SPEED` and syncs its
-  scene-local `x` straight onto the live object (`boss.x`,
-  `gorillas[i].x`, `monkey.col`) that `draw()` already reads, so no
-  drawing changes were needed to move them; `sceneRunBounce()` adds a
-  running bounce once an actor is under way. Once every actor's `x`
-  passes `LEVEL_SCENE_EXIT_X` (off the right edge — the canvas clips the
-  rest, nothing needs explicit hiding), `levelClearScene` is cleared and
-  `nextLevel()` finally runs, which is also where gorillas/boss/hazards
-  get reset back to normal. While `levelClearScene` is set, `loop()`
-  skips `updateHazards`/the death timer/the life timer/hit checks
-  entirely (gameplay is effectively frozen for the cutscene's duration),
-  and `tryMove()` also bails early, but **`gameRunning` itself is never
-  set to `false`** for this — this was written carefully to avoid
-  repeating the old level-clear-toast bug (a `gameRunning = false` +
-  `setTimeout` pause could get its state clobbered by a hazard/timer
-  check landing in the same frame, leaving a dark overlay stuck on
-  screen). If you touch this again, keep the pause frame-driven through
-  `levelClearScene`/`loop()`; don't reach for `gameRunning` + `setTimeout`.
+  `nextLevel()` directly when `gaps.every(g => g.filled)`; it resets any
+  gorilla mid-chest-beat / boss mid-windup pose (so nobody sits frozen in
+  it while the board fades) and builds a `levelClearScene` object with
+  one `{x, delay, done}` entry per actor (boss, each of the three
+  gorillas, player), staggered by `LEVEL_SCENE_BOSS_HEAD_START` /
+  `LEVEL_SCENE_GORILLA_GAP` / `LEVEL_SCENE_PLAYER_GAP`. All driven from
+  `updateLevelClearScene()`, called from `loop()` — **never** a
+  `setTimeout`, the same pattern as `deathTimer`/`DEATH_PAUSE`:
+  - `'fadeOut'` (`LEVEL_SCENE_FADE_TIME`s): the board stays exactly as it
+    was the instant the last gap filled (nothing updates, since `loop()`
+    skips normal updates whenever `levelClearScene` is set — see below)
+    while `draw()` layers an increasingly opaque black `rgba()` rect over
+    it, via `drawBoard()` plus the overlay rather than a CSS transition,
+    so it can't desync from game state.
+  - `'parade'`: replaces the whole frame with `drawLevelClearParade()` —
+    a plain dark backdrop (no jungle photo/lanes) with boss, then the
+    three gorillas staggered (chase-style), then the player carrying a
+    small wooden "NEXT LEVEL" sign (`drawLevelSign()`), each crossing at
+    a fixed height centered on screen (`totalH / 2`). This is a
+    *separate* coordinate space from the grid: actor `x` is sprite
+    widths from the canvas's left edge (not columns), running from just
+    off-screen left to just off-screen right (`LEVEL_SCENE_RUN_SPEED`,
+    deliberately slow so it actually reads); nothing needs explicit
+    hiding before/after, since off-canvas x values simply don't render.
+    `sceneRunBounce()` adds a running bounce once an actor is under way.
+    Once every actor's `done` is true, `nextLevel()` runs immediately
+    (resetting gaps/monkey/gorillas/boss/hazards for the new level)
+    *before* switching to `'fadeIn'`, so fading in reveals the new level
+    already in place, not the old one.
+  - `'fadeIn'` (`LEVEL_SCENE_FADE_TIME`s): same overlay as `'fadeOut'`
+    but the alpha counts down instead of up, over the fresh board
+    `nextLevel()` just built. `levelClearScene` is cleared when it hits 0.
+  While `levelClearScene` is set (any phase), `loop()` skips
+  `updateHazards`/the death timer/the life timer/hit checks entirely and
+  calls `updateLevelClearScene()` instead, and `tryMove()` also bails
+  early — but **`gameRunning` itself is never set to `false`** for this.
+  This was written carefully to avoid repeating the old level-clear-toast
+  bug (a `gameRunning = false` + `setTimeout` pause could get its state
+  clobbered by a hazard/timer check landing in the same frame, leaving a
+  dark overlay stuck on screen). If you touch this again, keep the pause
+  frame-driven through `levelClearScene`/`loop()`; don't reach for
+  `gameRunning` + `setTimeout`. Also note `drawBoard()` (the normal board
+  — lanes/gorillas/gaps/boss/hazards/monkey) and `drawLevelClearParade()`
+  (the intermission stage) are two independent draw paths selected by
+  `draw()`; grid-space drawing conventions (`CELL_W`/`CELL_H`/columns)
+  only apply to the former.
 
 ## Known gaps / discussed but not built
 

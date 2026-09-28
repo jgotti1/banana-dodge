@@ -43,19 +43,23 @@
   const BOSS_THROW_MAX = 7;
   const BOSS_HAND_UP = [-0.3, -0.62]; // raised throwing hand, in boss unit space
 
-  // Level-clear cutscene: a Pac-Man-style "parade" off the right edge —
-  // boss first, then the three top-hat gorillas chasing him in a staggered
-  // line, then the player carrying a "next level" sign. Driven entirely
-  // from inside loop() (see updateLevelClearScene()), the same pattern as
-  // deathTimer/DEATH_PAUSE, never a gameRunning+setTimeout pause — that
-  // combo previously left a stuck overlay on screen (see the level-clear
-  // toast note) when a hazard/timer check landed in the same frame.
-  const LEVEL_SCENE_RUN_SPEED = 4.5; // sprite widths per second
-  const LEVEL_SCENE_GORILLA_GAP = 0.3; // seconds between each gorilla's start
-  const LEVEL_SCENE_BOSS_HEAD_START = 0.5; // seconds the boss runs before the first gorilla starts
-  const LEVEL_SCENE_PLAYER_GAP = 0.6; // seconds after the last gorilla starts before the player follows
-  const LEVEL_SCENE_EXIT_X = COLS + 1.5; // off-canvas to the right; an actor past this is done
-  const LEVEL_SCENE_BOUNCE_RATE = 3; // bounces per second while running
+  // Level-clear cutscene: a Pac-Man-style intermission. The board fades to
+  // black, then boss/gorillas/player cross a plain dark stage centered on
+  // screen — boss first, then the three top-hat gorillas chasing him in a
+  // staggered line, then the player carrying a "next level" sign — each
+  // entering off one edge and exiting the other, slow enough to actually
+  // read. The new level fades back in once everyone's clear. Driven
+  // entirely from inside loop() (see updateLevelClearScene()), the same
+  // pattern as deathTimer/DEATH_PAUSE, never a gameRunning+setTimeout
+  // pause — that combo previously left a stuck overlay on screen (see the
+  // level-clear toast note) when a hazard/timer check landed in the same
+  // frame.
+  const LEVEL_SCENE_FADE_TIME = 0.6; // seconds to fade the board to black, and back in after
+  const LEVEL_SCENE_RUN_SPEED = 2; // sprite widths per second — slow and deliberate, not a blink-and-miss dash
+  const LEVEL_SCENE_GORILLA_GAP = 0.45; // seconds between each gorilla's start
+  const LEVEL_SCENE_BOSS_HEAD_START = 0.6; // seconds the boss runs before the first gorilla starts
+  const LEVEL_SCENE_PLAYER_GAP = 0.7; // seconds after the last gorilla starts before the player follows
+  const LEVEL_SCENE_BOUNCE_RATE = 2; // bounces per second while running
 
   const EMOJI_FONT = 'Apple Color Emoji, "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
@@ -704,66 +708,74 @@
     overlay.classList.add('toast-anim');
   }
 
-  // Kicks off the parade: boss, then the three gorillas staggered
-  // (chase-style), then the player carrying the next-level sign, each
-  // running off the right edge in turn. nextLevel() (which resets
-  // gorillas/boss/hazards) doesn't run until updateLevelClearScene() sees
-  // every actor clear of the screen, so the board stays frozen mid-cutscene.
+  // Kicks off the intermission: the board fades to black over the frozen
+  // last-seen state, then boss/gorillas/player cross a plain dark stage —
+  // boss first, then the three gorillas staggered (chase-style), then the
+  // player carrying the next-level sign — each entering from off the left
+  // edge and running off the right. nextLevel() (which resets gorillas/
+  // boss/hazards for the new level) runs once everyone's clear, and its
+  // fresh board fades back in before gameplay resumes.
   function startLevelClearScene(clearedLevel) {
     celebrateLevelClear(clearedLevel);
-    hazards = [];
-    // Clear any mid-chest-beat/windup pose so nobody runs off frozen in it.
+    // Clear any mid-chest-beat/windup pose so nobody sits frozen in it
+    // while the board fades out.
     gorillas.forEach(g => { g.shake = 0; });
     boss.windup = 0;
     boss.reload = 0;
+    const startX = -1.5; // sprite widths from the left edge — off-canvas
+    const exitX = (CELL_W * COLS) / SPRITE + 1.5; // off-canvas past the right edge
     const gorillaDelays = gorillas.map((g, i) => LEVEL_SCENE_BOSS_HEAD_START + i * LEVEL_SCENE_GORILLA_GAP);
     const playerDelay = gorillaDelays[gorillaDelays.length - 1] + LEVEL_SCENE_GORILLA_GAP + LEVEL_SCENE_PLAYER_GAP;
     levelClearScene = {
       clearedLevel,
+      phase: 'fadeOut', // 'fadeOut' -> 'parade' -> 'fadeIn'
       t: 0,
-      boss: { x: boss.x, delay: 0, done: false },
-      gorillas: gorillas.map((g, i) => ({ x: g.x, delay: gorillaDelays[i], done: false })),
-      player: { x: monkey.col, delay: playerDelay, done: false },
+      exitX,
+      boss: { x: startX, delay: 0, done: false },
+      gorillas: gorillas.map((g, i) => ({ x: startX, delay: gorillaDelays[i], done: false })),
+      player: { x: startX, delay: playerDelay, done: false },
     };
-    // Freeze the tween on the current (goal-row) position; the scene drives
-    // monkey.col directly from here on, same as gorillas[].x / boss.x.
-    monkey.animFrom = { col: monkey.col, row: monkey.row };
-    monkey.animTo = { col: monkey.col, row: monkey.row };
-    monkey.animT = 1;
   }
 
-  // Runs one actor forward once the scene clock passes its delay, syncing
-  // its scene-local x back onto the live object draw() already reads from
-  // (boss.x / gorillas[i].x / monkey.col), so no drawing changes are needed
-  // to move them — only the sign (see draw()) is scene-specific.
-  function runSceneActor(actor, dt) {
-    if (levelClearScene.t < actor.delay || actor.done) return false;
+  // Runs one parade actor forward once the scene clock passes its delay.
+  // Actors live entirely in scene-local coordinates (see
+  // drawLevelClearParade()) — unlike the old design, this never touches
+  // boss.x / gorillas[i].x / monkey.col, so the live board is untouched
+  // and ready to draw normally the moment the scene ends.
+  function runSceneActor(actor, dt, exitX) {
+    if (levelClearScene.t < actor.delay || actor.done) return;
     actor.x += LEVEL_SCENE_RUN_SPEED * dt;
-    if (actor.x >= LEVEL_SCENE_EXIT_X) actor.done = true;
-    return true;
+    if (actor.x >= exitX) actor.done = true;
   }
 
   function updateLevelClearScene(dt) {
     const scene = levelClearScene;
     scene.t += dt;
 
-    runSceneActor(scene.boss, dt);
-    boss.x = scene.boss.x;
-
-    scene.gorillas.forEach((sg, i) => {
-      runSceneActor(sg, dt);
-      gorillas[i].x = sg.x;
-    });
-
-    runSceneActor(scene.player, dt);
-    monkey.col = scene.player.x;
-    monkey.animFrom.col = monkey.animTo.col = scene.player.x;
-
-    const allDone = scene.boss.done && scene.gorillas.every(sg => sg.done) && scene.player.done;
-    if (allDone) {
-      levelClearScene = null;
-      nextLevel();
+    if (scene.phase === 'fadeOut') {
+      if (scene.t >= LEVEL_SCENE_FADE_TIME) {
+        scene.phase = 'parade';
+        scene.t = 0;
+      }
+      return;
     }
+
+    if (scene.phase === 'parade') {
+      runSceneActor(scene.boss, dt, scene.exitX);
+      scene.gorillas.forEach(sg => runSceneActor(sg, dt, scene.exitX));
+      runSceneActor(scene.player, dt, scene.exitX);
+
+      const allDone = scene.boss.done && scene.gorillas.every(sg => sg.done) && scene.player.done;
+      if (allDone) {
+        nextLevel(); // reset the board now so fadeIn reveals the new level
+        scene.phase = 'fadeIn';
+        scene.t = 0;
+      }
+      return;
+    }
+
+    // fadeIn
+    if (scene.t >= LEVEL_SCENE_FADE_TIME) levelClearScene = null;
   }
 
   // A hit starts a short death beat: the player freezes where it was hit
@@ -1408,10 +1420,14 @@
     }
   }
 
-  function draw() {
-    const width = CELL_W * COLS;
-    const bandH = BOSS_BAND_ROWS * CELL_H;
-    const totalH = bandH + CELL_H * ROWS;
+  // Normal board: lanes, gorillas, gaps, boss, hazards, monkey. Used
+  // directly when no cutscene is playing, and also during the level-clear
+  // scene's fadeOut/fadeIn phases (see draw()), where it's drawn frozen
+  // (fadeOut, showing whatever was on screen the instant the last gap
+  // filled) or fresh (fadeIn, after nextLevel() has already reset it)
+  // under a black overlay. The 'parade' phase draws a completely separate
+  // scene instead — see drawLevelClearParade().
+  function drawBoard(width, bandH, totalH) {
     ctx.clearRect(0, 0, width, totalH);
     if (bgLoaded) drawImageCover(ctx, bgImage, 0, 0, width, totalH);
     drawBossBand(width, bandH);
@@ -1437,16 +1453,13 @@
 
     // enemy gorillas; a shaking gorilla is chest-beating before its drop.
     // Drawn at its current patrol x, not its fixed home column — collision
-    // still blocks the home column (see tryMove()). During the level-clear
-    // scene, x is instead the running position (see updateLevelClearScene())
-    // and each gorilla gets a running bounce once it's under way.
-    gorillas.forEach((g, i) => {
+    // still blocks the home column (see tryMove()).
+    gorillas.forEach(g => {
       const beat = g.shake > 0 ? GORILLA_SHAKE_TIME - g.shake : -1;
       // A bit bigger than the player; hands rest on the bottom of row 0 and
       // the hat pokes up into the boss band.
       const size = SPRITE * 1.375;
-      const hop = sceneRunBounce(levelClearScene && levelClearScene.gorillas[i]);
-      drawPlushGorilla(ctx, (g.x + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true, hop });
+      drawPlushGorilla(ctx, (g.x + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true });
     });
 
     // gaps
@@ -1508,27 +1521,80 @@
 
     // monkey
     const pos = currentMonkeyPos();
-    const playerScenePart = levelClearScene && levelClearScene.player;
     drawPlushGorilla(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H + PLUSH_CENTER_Y * playerSize(), playerSize(), PLAYER_COLORS, {
-      // sideways steps slide flat; only row changes bounce (or the
-      // level-clear scene's own running bounce once the player sets off)
-      hop: playerScenePart ? sceneRunBounce(playerScenePart) : (monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1),
+      // sideways steps slide flat; only row changes bounce
+      hop: monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1,
       dead: monkey.dead,
       angle: monkey.dead ? deathSpinAngle() : 0,
     });
-    // Next-level sign: appears once the player actually sets off with the
-    // pack, so it reads as carried rather than conjured mid-air.
-    if (playerScenePart && levelClearScene.t >= playerScenePart.delay) {
-      drawLevelSign(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H - playerSize() * 0.85, levelClearScene.clearedLevel + 1);
-    }
     ctx.restore();
   }
 
-  // Bounce phase (0–1, feeding drawPlushGorilla's hop arch) for a
-  // level-clear scene actor: 0 before its delay elapses or after it's
-  // exited, otherwise a repeating run cycle timed from when it set off.
+  // Top-level draw: the normal board, unless the level-clear scene is in
+  // its 'parade' phase, which replaces the whole frame with a separate
+  // dark stage (see drawLevelClearParade()). fadeOut/fadeIn still draw the
+  // normal board (frozen pre-clear, or freshly reset post-clear) with a
+  // black overlay fading in or out over it.
+  function draw() {
+    const width = CELL_W * COLS;
+    const bandH = BOSS_BAND_ROWS * CELL_H;
+    const totalH = bandH + CELL_H * ROWS;
+
+    if (levelClearScene && levelClearScene.phase === 'parade') {
+      drawLevelClearParade(width, totalH);
+      return;
+    }
+
+    drawBoard(width, bandH, totalH);
+
+    if (levelClearScene) {
+      const alpha = levelClearScene.phase === 'fadeOut'
+        ? Math.min(1, levelClearScene.t / LEVEL_SCENE_FADE_TIME)
+        : Math.max(0, 1 - levelClearScene.t / LEVEL_SCENE_FADE_TIME); // fadeIn
+      ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+      ctx.fillRect(0, 0, width, totalH);
+    }
+  }
+
+  // The intermission stage: a plain dark backdrop (no jungle photo, no
+  // lanes) with boss/gorillas/player crossing left-to-right at a fixed
+  // height centered on screen, Pac-Man-style. Actor x is in sprite widths
+  // from the left edge (not grid columns — this scene has its own
+  // coordinate space, see startLevelClearScene()), so pixel x is just
+  // x * SPRITE; actors before their delay or past exitX simply land
+  // off-canvas and aren't visible, no extra visibility flag needed.
+  function drawLevelClearParade(width, totalH) {
+    const scene = levelClearScene;
+    ctx.clearRect(0, 0, width, totalH);
+    ctx.fillStyle = '#040d07';
+    ctx.fillRect(0, 0, width, totalH);
+
+    const y = totalH / 2;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+
+    drawBoss(ctx, scene.boss.x * SPRITE, y, bossSize(), { holding: true });
+
+    scene.gorillas.forEach(sg => {
+      const size = SPRITE * 1.375;
+      drawPlushGorilla(ctx, sg.x * SPRITE, y + PLUSH_CENTER_Y * size, size, HAT_PLUSH_COLORS, { hat: true, hop: sceneRunBounce(sg) });
+    });
+
+    const pSize = playerSize();
+    drawPlushGorilla(ctx, scene.player.x * SPRITE, y + PLUSH_CENTER_Y * pSize, pSize, PLAYER_COLORS, { hop: sceneRunBounce(scene.player) });
+    // Next-level sign: appears once the player actually sets off with the
+    // pack, so it reads as carried rather than conjured mid-air.
+    if (scene.t >= scene.player.delay) {
+      drawLevelSign(ctx, scene.player.x * SPRITE, y + PLUSH_CENTER_Y * pSize - pSize * 0.85, scene.clearedLevel + 1);
+    }
+  }
+
+  // Bounce phase (0–1, feeding drawPlushGorilla's hop arch) for a parade
+  // actor: 0 (grounded) before its delay elapses or after it's exited,
+  // otherwise a repeating run cycle timed from when it set off.
   function sceneRunBounce(actor) {
-    if (!actor || levelClearScene.t < actor.delay || actor.done) return 1;
+    if (levelClearScene.t < actor.delay || actor.done) return 1;
     return ((levelClearScene.t - actor.delay) * LEVEL_SCENE_BOUNCE_RATE) % 1;
   }
 

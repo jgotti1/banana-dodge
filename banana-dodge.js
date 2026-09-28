@@ -44,22 +44,24 @@
   const BOSS_HAND_UP = [-0.3, -0.62]; // raised throwing hand, in boss unit space
 
   // Level-clear cutscene: a Pac-Man-style intermission. The board fades to
-  // black, then boss/gorillas/player cross a plain dark stage centered on
-  // screen — boss first, then the three top-hat gorillas chasing him in a
-  // staggered line, then the player carrying a "next level" sign — each
-  // entering off one edge and exiting the other, slow enough to actually
-  // read. The new level fades back in once everyone's clear. Driven
-  // entirely from inside loop() (see updateLevelClearScene()), the same
-  // pattern as deathTimer/DEATH_PAUSE, never a gameRunning+setTimeout
-  // pause — that combo previously left a stuck overlay on screen (see the
-  // level-clear toast note) when a hazard/timer check landed in the same
-  // frame.
-  const LEVEL_SCENE_FADE_TIME = 0.6; // seconds to fade the board to black, and back in after
+  // a plain jungle-green stage, then boss/gorillas/player cross it
+  // centered on screen — boss first, then the three top-hat gorillas
+  // chasing him in a staggered line, then the player carrying a "next
+  // level" sign — each entering off one edge and exiting the other, slow
+  // enough to actually read, with the music switching to a circus-chase
+  // riff for the duration (see setMusicMode()). The new level fades back
+  // in once everyone's clear. Driven entirely from inside loop() (see
+  // updateLevelClearScene()), the same pattern as deathTimer/DEATH_PAUSE,
+  // never a gameRunning+setTimeout pause — that combo previously left a
+  // stuck overlay on screen (see the level-clear toast note) when a
+  // hazard/timer check landed in the same frame.
+  const LEVEL_SCENE_FADE_TIME = 0.6; // seconds to fade the board out, and back in after
   const LEVEL_SCENE_RUN_SPEED = 2; // sprite widths per second — slow and deliberate, not a blink-and-miss dash
   const LEVEL_SCENE_GORILLA_GAP = 0.45; // seconds between each gorilla's start
   const LEVEL_SCENE_BOSS_HEAD_START = 0.6; // seconds the boss runs before the first gorilla starts
   const LEVEL_SCENE_PLAYER_GAP = 0.7; // seconds after the last gorilla starts before the player follows
   const LEVEL_SCENE_BOUNCE_RATE = 2; // bounces per second while running
+  const LEVEL_SCENE_BG = '20, 50, 26'; // rgb triplet matching #game's own --panel jungle green (CSS), not black
 
   const EMOJI_FONT = 'Apple Color Emoji, "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
@@ -370,6 +372,15 @@
   const MUSIC_SCALE = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25]; // C D E G A C
   const MUSIC_PATTERN = [0, 2, 4, 2, 3, 5, 3, 2, 0, 4, 2, 4, 3, 5, 4, 2];
   const NOTE_MS = 220;
+  // Circus-chase riff swapped in for the level-clear intermission (see
+  // setMusicMode(), called from startLevelClearScene()/updateLevelClearScene()):
+  // a brighter, faster "calliope" lead over a galloping oom-pah bass pulse,
+  // instead of the normal marimba tune.
+  const CHASE_SCALE = [392.0, 440.0, 493.88, 587.33, 659.25, 784.0]; // G A B D E G
+  const CHASE_PATTERN = [0, 2, 4, 2, 1, 3, 5, 3, 0, 2, 4, 2, 1, 3, 5, 4];
+  const CHASE_NOTE_MS = 130;
+  const CHASE_BASS_FREQ = 98; // G2 oom-pah pulse under the gallop
+  let musicMode = 'normal'; // 'normal' | 'chase'
   let musicIndex = 0;
   let musicTimer = null;
   let musicEnabled = true;
@@ -379,6 +390,14 @@
 
   function playMusicStep() {
     if (!musicEnabled || !audioCtx) return;
+    if (musicMode === 'chase') {
+      const step = musicIndex % CHASE_PATTERN.length;
+      const freq = CHASE_SCALE[CHASE_PATTERN[step]];
+      beep(freq, 0.09, 'square', step % 2 === 0 ? 0.05 : 0.032);
+      if (step % 2 === 0) beep(CHASE_BASS_FREQ, 0.08, 'sawtooth', 0.04); // oom-pah pulse on the downbeat
+      musicIndex++;
+      return;
+    }
     const step = musicIndex % MUSIC_PATTERN.length;
     const freq = MUSIC_SCALE[MUSIC_PATTERN[step]];
     const accent = step % 4 === 0;
@@ -393,12 +412,26 @@
 
   function startMusic() {
     if (musicTimer) return;
-    musicTimer = setInterval(playMusicStep, NOTE_MS);
+    musicTimer = setInterval(playMusicStep, musicMode === 'chase' ? CHASE_NOTE_MS : NOTE_MS);
   }
 
   function stopMusic() {
     clearInterval(musicTimer);
     musicTimer = null;
+  }
+
+  // Switches the looping background music between the normal tune and the
+  // level-clear intermission's circus-chase riff, restarting the interval
+  // at that mode's tempo so the gallop is actually faster, not just a
+  // different scale played at the normal pace.
+  function setMusicMode(mode) {
+    if (musicMode === mode) return;
+    musicMode = mode;
+    musicIndex = 0;
+    if (musicTimer) {
+      clearInterval(musicTimer);
+      musicTimer = setInterval(playMusicStep, mode === 'chase' ? CHASE_NOTE_MS : NOTE_MS);
+    }
   }
 
   function toggleMusic() {
@@ -676,6 +709,7 @@
     level++;
     lives++;
     sfxExtraLife();
+    setMusicMode('normal'); // back from the level-clear scene's chase riff, if it was playing
     gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
@@ -708,15 +742,16 @@
     overlay.classList.add('toast-anim');
   }
 
-  // Kicks off the intermission: the board fades to black over the frozen
-  // last-seen state, then boss/gorillas/player cross a plain dark stage —
-  // boss first, then the three gorillas staggered (chase-style), then the
-  // player carrying the next-level sign — each entering from off the left
-  // edge and running off the right. nextLevel() (which resets gorillas/
+  // Kicks off the intermission: the board fades to a plain jungle-green
+  // stage over the frozen last-seen state, then boss/gorillas/player cross
+  // it — boss first, then the three gorillas staggered (chase-style),
+  // then the player carrying the next-level sign — each entering from off
+  // the left edge and running off the right. nextLevel() (which resets gorillas/
   // boss/hazards for the new level) runs once everyone's clear, and its
   // fresh board fades back in before gameplay resumes.
   function startLevelClearScene(clearedLevel) {
     celebrateLevelClear(clearedLevel);
+    setMusicMode('chase');
     // Clear any mid-chest-beat/windup pose so nobody sits frozen in it
     // while the board fades out.
     gorillas.forEach(g => { g.shake = 0; });
@@ -1425,7 +1460,7 @@
   // scene's fadeOut/fadeIn phases (see draw()), where it's drawn frozen
   // (fadeOut, showing whatever was on screen the instant the last gap
   // filled) or fresh (fadeIn, after nextLevel() has already reset it)
-  // under a black overlay. The 'parade' phase draws a completely separate
+  // under the LEVEL_SCENE_BG overlay. The 'parade' phase draws a completely separate
   // scene instead — see drawLevelClearParade().
   function drawBoard(width, bandH, totalH) {
     ctx.clearRect(0, 0, width, totalH);
@@ -1532,9 +1567,9 @@
 
   // Top-level draw: the normal board, unless the level-clear scene is in
   // its 'parade' phase, which replaces the whole frame with a separate
-  // dark stage (see drawLevelClearParade()). fadeOut/fadeIn still draw the
-  // normal board (frozen pre-clear, or freshly reset post-clear) with a
-  // black overlay fading in or out over it.
+  // jungle-green stage (see drawLevelClearParade()). fadeOut/fadeIn still
+  // draw the normal board (frozen pre-clear, or freshly reset post-clear)
+  // with the same LEVEL_SCENE_BG overlay fading in or out over it.
   function draw() {
     const width = CELL_W * COLS;
     const bandH = BOSS_BAND_ROWS * CELL_H;
@@ -1551,13 +1586,13 @@
       const alpha = levelClearScene.phase === 'fadeOut'
         ? Math.min(1, levelClearScene.t / LEVEL_SCENE_FADE_TIME)
         : Math.max(0, 1 - levelClearScene.t / LEVEL_SCENE_FADE_TIME); // fadeIn
-      ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+      ctx.fillStyle = `rgba(${LEVEL_SCENE_BG}, ${alpha})`;
       ctx.fillRect(0, 0, width, totalH);
     }
   }
 
-  // The intermission stage: a plain dark backdrop (no jungle photo, no
-  // lanes) with boss/gorillas/player crossing left-to-right at a fixed
+  // The intermission stage: a plain jungle-green backdrop (LEVEL_SCENE_BG —
+  // no jungle photo, no lanes) with boss/gorillas/player crossing left-to-right at a fixed
   // height centered on screen, Pac-Man-style. Actor x is in sprite widths
   // from the left edge (not grid columns — this scene has its own
   // coordinate space, see startLevelClearScene()), so pixel x is just
@@ -1566,7 +1601,7 @@
   function drawLevelClearParade(width, totalH) {
     const scene = levelClearScene;
     ctx.clearRect(0, 0, width, totalH);
-    ctx.fillStyle = '#040d07';
+    ctx.fillStyle = `rgb(${LEVEL_SCENE_BG})`;
     ctx.fillRect(0, 0, width, totalH);
 
     const y = totalH / 2;

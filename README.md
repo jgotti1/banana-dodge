@@ -32,10 +32,11 @@ without distorting anything.
 - **Lives:** you have 3. Getting hit by a banana, stick, or poop, or
   running out the 90-second crossing timer, costs a life (your gorilla spins
   with ✖✖ eyes before respawning).
-- **Clearing a level:** fill all four gaps and watch the boss gorilla,
-  then the three top-hat gorillas, then your own gorilla — now carrying
-  a "Next Level" sign — run off screen in turn before the new level
-  starts. You also get a bonus life for clearing it.
+- **Clearing a level:** fill all four gaps and the screen dims to a
+  jungle-green stage where the music switches to a circus-chase tune
+  while the boss gorilla, then the three top-hat gorillas, then your own
+  gorilla — now carrying a "Next Level" sign — run through in turn
+  before the new level fades in. You also get a bonus life for clearing it.
 - **High scores:** your best score and highest level are saved in your
   browser and shown on the start and game-over screens. If you beat your
   best, the game-over screen celebrates with a message and confetti.

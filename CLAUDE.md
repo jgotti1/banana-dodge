@@ -253,7 +253,9 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
     fixed pentatonic note sequence (`MUSIC_SCALE` / `MUSIC_PATTERN`)
     with a light low-thump accent, all via `beep()`. The `#musicBtn`
     toggle flips `musicEnabled` (mute is "don't schedule the next
-    note", not a Web Audio gain mute).
+    note", not a Web Audio gain mute). `playMusicStep()` swaps to a
+    faster circus-chase riff during the level-clear scene — see
+    Circus-chase music further down.
   - Audio only starts after a user gesture (`ensureAudio()`, called
     from the start/restart/music buttons and on first keypress), per
     browser autoplay rules; `startMusic()` runs once, the first time
@@ -407,14 +409,18 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   - `'fadeOut'` (`LEVEL_SCENE_FADE_TIME`s): the board stays exactly as it
     was the instant the last gap filled (nothing updates, since `loop()`
     skips normal updates whenever `levelClearScene` is set — see below)
-    while `draw()` layers an increasingly opaque black `rgba()` rect over
-    it, via `drawBoard()` plus the overlay rather than a CSS transition,
-    so it can't desync from game state.
+    while `draw()` layers an increasingly opaque `rgba()` rect of
+    `LEVEL_SCENE_BG` (the same jungle green as `#game`'s own CSS
+    `--panel` background, not black — matches the rest of the chrome
+    rather than going full black-screen) over it, via `drawBoard()` plus
+    the overlay rather than a CSS transition, so it can't desync from
+    game state.
   - `'parade'`: replaces the whole frame with `drawLevelClearParade()` —
-    a plain dark backdrop (no jungle photo/lanes) with boss, then the
-    three gorillas staggered (chase-style), then the player carrying a
-    small wooden "NEXT LEVEL" sign (`drawLevelSign()`), each crossing at
-    a fixed height centered on screen (`totalH / 2`). This is a
+    a plain `LEVEL_SCENE_BG` backdrop (no jungle photo/lanes) with boss,
+    then the three gorillas staggered (chase-style), then the player
+    carrying a small wooden "NEXT LEVEL" sign (`drawLevelSign()`), each
+    crossing at a fixed height centered on screen (`totalH / 2`). The
+    music also switches here — see Circus-chase music below. This is a
     *separate* coordinate space from the grid: actor `x` is sprite
     widths from the canvas's left edge (not columns), running from just
     off-screen left to just off-screen right (`LEVEL_SCENE_RUN_SPEED`,
@@ -442,6 +448,21 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   (the intermission stage) are two independent draw paths selected by
   `draw()`; grid-space drawing conventions (`CELL_W`/`CELL_H`/columns)
   only apply to the former.
+- **Circus-chase music**: the level-clear scene also swaps the looping
+  background music for a faster, brighter "calliope" riff
+  (`CHASE_SCALE`/`CHASE_PATTERN`/`CHASE_NOTE_MS`, square-wave lead over a
+  sawtooth oom-pah bass pulse at `CHASE_BASS_FREQ`) instead of the normal
+  marimba tune (`MUSIC_SCALE`/`MUSIC_PATTERN`/`NOTE_MS`). `setMusicMode()`
+  is the only thing that touches `musicMode`; it no-ops if already in
+  that mode, otherwise resets `musicIndex` and restarts `musicTimer` at
+  the new mode's tempo (`CHASE_NOTE_MS` is shorter, so the gallop is
+  genuinely faster, not just a different scale at the normal pace) —
+  `playMusicStep()` itself branches on `musicMode` for which scale/
+  pattern/instrumentation to use. `startLevelClearScene()` switches to
+  `'chase'`; `nextLevel()` switches back to `'normal'` (the scene's only
+  call site, once the parade finishes — see Level-clear scene above), so
+  the chase riff plays through fadeOut + parade and the normal tune
+  resumes as fadeIn reveals the new level.
 
 ## Known gaps / discussed but not built
 

@@ -42,6 +42,7 @@ h1 {
   padding: 0 4px 6px;
 }
 .hud span { color: var(--accent); }
+.life-icon { width: 1.3em; height: 1.3em; vertical-align: -0.3em; }
 .icon-btn {
   background: none;
   border: none;
@@ -75,14 +76,14 @@ h1 {
 }
 .dpad {
   display: grid;
-  grid-template-columns: repeat(3, 56px);
-  grid-template-rows: repeat(2, 56px);
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(2, 48px);
   justify-content: center;
-  gap: 6px;
-  margin: 16px auto 0;
+  gap: 5px;
+  margin: 12px auto 0;
 }
 .dbtn {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   border: none;
   border-radius: 10px;
   background: #3a2416;
@@ -108,8 +109,6 @@ h1 {
   z-index: 10;
 }
 .overlay.hidden { display: none; }
-.best-line { font-size: 0.9rem; margin: 4px 0 0; }
-.best-line span { color: var(--accent); font-weight: 700; }
 .overlay .new-best {
   margin: 0 0 4px;
   font-size: 1.15rem;
@@ -241,7 +240,7 @@ h1 {
   margin: 6px 0 2px;
   background: radial-gradient(ellipse 60% 22% at 50% 90%, rgba(245, 197, 66, 0.22), transparent 70%);
 }
-#splashDancer { width: 100%; height: 100%; display: block; }
+#splashDancer, #introDancer { width: 100%; height: 100%; display: block; }
 .splash-card .splash-tagline {
   margin: 0 0 14px;
   max-width: 330px;
@@ -332,19 +331,6 @@ h1 {
   .splash-card, .splash-card .splash-play { animation: none; }
 }
 
-/* --- cool (intro transition) --- */
-.monkey-cool { animation: coolGroove 0.9s ease-in-out infinite; }
-.monkey-cool .m-arm-left { animation: armPumpL 0.9s ease-in-out infinite; transform-origin: 58px 120px; }
-.monkey-cool .m-arm-right { animation: armPumpR 0.9s ease-in-out infinite; transform-origin: 142px 120px; }
-.monkey-cool .m-leg-left { animation: legKickL 0.9s ease-in-out infinite; transform-origin: 87px 184px; }
-.monkey-cool .m-leg-right { animation: legKickR 0.9s ease-in-out infinite; transform-origin: 113px 184px; }
-.monkey-cool .m-tail { animation: tailWag 0.6s ease-in-out infinite; transform-origin: 65px 175px; }
-
-@keyframes coolGroove { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-8px) rotate(3deg); } }
-@keyframes armPumpL { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-70deg); } }
-@keyframes armPumpR { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(70deg); } }
-@keyframes legKickL { 0%, 100% { transform: rotate(-10deg); } 50% { transform: rotate(20deg); } }
-@keyframes legKickR { 0%, 100% { transform: rotate(10deg); } 50% { transform: rotate(-20deg); } }
 @keyframes tailWag { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
 
 /* --- happy (level clear) --- */
@@ -379,41 +365,120 @@ h1 {
   50% { opacity: 1; transform: scale(1.2) rotate(20deg); }
 }
 
-/* --- mean (game over) --- */
-.monkey-mean {
-  animation: meanShake 0.35s ease-in-out infinite;
-  filter: drop-shadow(0 0 14px rgba(255, 60, 60, 0.55));
+/* --- game over: a card in the same visual language as the splash card,
+   tinted rose/red instead of jungle green-and-gold, centered on the
+   player gorilla (drawPlushGorilla) knocked out rather than the old SVG
+   monkey rig. --- */
+.overlay.gameover {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 28%, rgba(120, 40, 40, 0.5), transparent 70%),
+    radial-gradient(ellipse at 50% 100%, rgba(245, 197, 66, 0.06), transparent 60%),
+    #0a170c;
+  padding: 16px;
 }
-.monkey-mean .m-arm-left { animation: armShakeL 0.3s ease-in-out infinite; transform-origin: 58px 120px; }
-.monkey-mean .m-arm-right { animation: armShakeR 0.3s ease-in-out infinite; transform-origin: 142px 120px; }
-.monkey-mean .m-brow-left, .monkey-mean .m-brow-right { animation: browTwitch 0.4s ease-in-out infinite; }
-.monkey-mean .m-flush { animation: flushPulse 0.6s ease-in-out infinite; }
-
-@keyframes meanShake {
-  0%, 100% { transform: translate(0, 0) rotate(0deg); }
-  20% { transform: translate(-4px, 1px) rotate(-3deg); }
-  40% { transform: translate(4px, -1px) rotate(3deg); }
-  60% { transform: translate(-4px, 1px) rotate(-2deg); }
-  80% { transform: translate(4px, -1px) rotate(2deg); }
+.gameover-card {
+  width: min(92vw, 380px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 24px 24px 20px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(48, 22, 22, 0.92), rgba(18, 12, 13, 0.92));
+  border: 1px solid rgba(255, 120, 120, 0.22);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  animation: splashIn 0.5s ease-out both;
 }
-@keyframes armShakeL { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
-@keyframes armShakeR { 0%, 100% { transform: rotate(8deg); } 50% { transform: rotate(-8deg); } }
-@keyframes browTwitch { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(1px); } }
-@keyframes flushPulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.55; } }
-
-.m-anger {
+.gameover-card .gameover-kicker {
+  margin: 0 0 4px;
+  max-width: none;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: #ff8f8f;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.35);
+}
+.gameover-stage {
+  position: relative;
+  width: clamp(120px, 26vh, 190px);
+  aspect-ratio: 1;
+  margin: 4px 0 6px;
+  background: radial-gradient(ellipse 60% 22% at 50% 90%, rgba(255, 120, 120, 0.16), transparent 70%);
+}
+#gameOverDancer { width: 100%; height: 100%; display: block; }
+.dizzy-star {
   position: absolute;
-  top: -14px;
-  font-size: 1.3rem;
-  animation: angerPuff 1s ease-out infinite;
+  top: -6px;
+  font-size: 1.2rem;
+  animation: dizzyOrbit 2.4s ease-in-out infinite;
 }
-.m-anger-1 { left: 6%; animation-delay: 0s; }
-.m-anger-2 { right: 6%; animation-delay: 0.4s; }
-@keyframes angerPuff {
-  0% { opacity: 0; transform: translateY(0) scale(0.6); }
-  40% { opacity: 1; transform: translateY(-10px) scale(1); }
-  100% { opacity: 0; transform: translateY(-26px) scale(1.3); }
+.dizzy-star-1 { left: 4%; animation-delay: 0s; }
+.dizzy-star-2 { right: 4%; animation-delay: 1.2s; }
+@keyframes dizzyOrbit {
+  0% { opacity: 0; transform: translate(0, 6px) scale(0.7); }
+  25% { opacity: 1; transform: translate(10px, -8px) scale(1); }
+  50% { opacity: 1; transform: translate(0, -14px) scale(1.05); }
+  75% { opacity: 1; transform: translate(-10px, -8px) scale(1); }
+  100% { opacity: 0; transform: translate(0, 6px) scale(0.7); }
 }
+.gameover-final {
+  margin: 2px 0 14px;
+  font-size: 0.95rem;
+  color: #d8d0b8;
+}
+.gameover-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 16px;
+}
+.gameover-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.gameover-stat-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(242, 234, 217, 0.6);
+}
+.gameover-stat-value {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.gameover-card .gameover-play {
+  width: 100%;
+  margin: 0;
+  padding: 14px 20px;
+  font-size: 1.2rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2a1d05;
+  background: linear-gradient(180deg, #ffd766, #f5c542);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 6px 0 #b8871a, 0 12px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease;
+}
+.gameover-card .gameover-play:hover { filter: brightness(1.06); }
+.gameover-card .gameover-play:active {
+  transform: translateY(5px);
+  box-shadow: 0 1px 0 #b8871a, 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+.gameover-card .gameover-play:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
 /* --- scale up chrome (text, buttons, monkey rig) on tablets (iPad) and
    desktop; .wrap's actual px width is computed by resizeCanvas() in JS,
@@ -422,11 +487,11 @@ h1 {
   h1 { font-size: 1.7rem; }
   .hud { font-size: 1.1rem; }
   .dpad {
-    grid-template-columns: repeat(3, 68px);
-    grid-template-rows: repeat(2, 68px);
-    gap: 8px;
+    grid-template-columns: repeat(3, 58px);
+    grid-template-rows: repeat(2, 58px);
+    gap: 7px;
   }
-  .dbtn { font-size: 1.6rem; }
+  .dbtn { font-size: 1.4rem; }
   .monkey { width: 170px; height: 187px; }
   .overlay p { max-width: 400px; }
 }
@@ -436,12 +501,12 @@ h1 {
   h1 { font-size: 2rem; }
   .hud { font-size: 1.25rem; }
   .dpad {
-    grid-template-columns: repeat(3, 76px);
-    grid-template-rows: repeat(2, 76px);
-    gap: 10px;
-    margin-top: 22px;
+    grid-template-columns: repeat(3, 64px);
+    grid-template-rows: repeat(2, 64px);
+    gap: 8px;
+    margin-top: 16px;
   }
-  .dbtn { font-size: 1.8rem; border-radius: 12px; }
+  .dbtn { font-size: 1.55rem; border-radius: 12px; }
   .monkey { width: 200px; height: 220px; }
   .overlay p { max-width: 460px; font-size: 1.05rem; }
   #game { border-width: 6px; }

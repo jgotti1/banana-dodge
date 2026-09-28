@@ -13,7 +13,8 @@
   // Gorilla poop: a random gorilla shakes (telegraph), then drops poop that
   // falls straight down its column. It splats at the top of the start row,
   // which stays safe so a respawned monkey can't be hit instantly.
-  const POOP_RADIUS = 0.24; // sprite units
+  const POOP_RADIUS = 0.24; // sprite units; also the hit-box radius, see hazardHit()
+  const POOP_DRAW_SCALE = 1.1; // visual only — drawn 110% of POOP_RADIUS, hit box unchanged
   const POOP_FALL_SPEED = 2.6; // rows per second at level 1
   const POOP_LAND_Y = ROWS - 1.5; // row-center coords: top edge of start row
   const GORILLA_SHAKE_TIME = 0.7; // seconds of warning before the drop
@@ -41,21 +42,78 @@
     { type: 'goal' },
     { type: 'safe' },
     { type: 'banana', dir: 1, baseSpeed: 1.4, count: 3, radius: 0.22 },
-    { type: 'barrel', dir: -1, baseSpeed: 1.1, count: 2, radius: 0.34 },
+    { type: 'stick', dir: -1, baseSpeed: 1.1, count: 2, radius: 0.34 },
     { type: 'safe' },
-    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 4, radius: 0.22 },
-    { type: 'barrel', dir: 1, baseSpeed: 1.3, count: 2, radius: 0.34 },
+    // Row 5 is the first banana lane the player reaches leaving the start
+    // row (row 8, moving up through the row-6 stick lane); level1Count
+    // eases that first crossing before the normal count kicks in from
+    // level 2 on, see spawnHazards().
+    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 4, level1Count: 3, radius: 0.22 },
+    { type: 'stick', dir: 1, baseSpeed: 1.3, count: 2, radius: 0.34 },
     { type: 'safe' },
     { type: 'start' },
   ];
 
+  // Lane rows are tinted, translucent overlays (not opaque fills) so the
+  // jungle background photo (see bgImage below) shows through underneath;
+  // the alpha per type is what keeps banana/stick lanes readable against
+  // whatever the photo is doing in that stripe.
   const LANE_COLORS = {
-    goal: '#14321a',
-    start: '#2e5b2e',
-    safe: '#3a6b3a',
-    banana: '#4a3a1a',
-    barrel: '#4a2a1a',
+    goal: 'rgba(40, 78, 48, 0.72)',
+    start: 'rgba(90, 145, 88, 0.62)',
+    safe: 'rgba(100, 160, 98, 0.6)',
+    banana: 'rgba(128, 100, 50, 0.68)',
+    stick: 'rgba(158, 146, 92, 0.68)', // lighter dirt so the brown sticks stand out
   };
+
+  // Jungle background photo (owner-supplied reference), drawn cover-fit
+  // behind the boss band and the lane grid. Loads once; draw() just no-ops
+  // the drawImage call until it's ready, leaving the plain canvas
+  // background (dark, from CSS `#game { background: var(--panel) }`)
+  // showing for that first frame or two.
+  const bgImage = new Image();
+  let bgLoaded = false;
+  bgImage.onload = () => { bgLoaded = true; };
+  bgImage.src = 'assets/bg-jungle.jpg';
+
+  // Draws `img` into (x, y, w, h) scaled to cover the whole box (cropping
+  // whichever axis overhangs) rather than stretched, so the photo doesn't
+  // distort the way lane colors are allowed to stretch.
+  function drawImageCover(g, img, x, y, w, h) {
+    const scale = Math.max(w / img.width, h / img.height);
+    const iw = img.width * scale;
+    const ih = img.height * scale;
+    g.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+  }
+
+  // Cartoon banana sprite (owner-supplied reference, background removed),
+  // replacing the flat 🍌 emoji. Drawn a bit larger than the emoji was
+  // (BANANA_DRAW_SCALE, visual only — h.radius, the hit box hazardHit()
+  // uses, is untouched) and tilted around BANANA_TILT (the reference art's
+  // diagonal); each banana hazard gets its own random tilt within
+  // ±BANANA_TILT_VARIANCE of that, fixed for its lifetime (assigned once
+  // in spawnHazards()), so a lane of bananas doesn't look like one sprite
+  // copy-pasted sideways. Mirrored by travel direction so the curl's high
+  // side always trails and it reads as flying the way it's actually moving.
+  const bananaImage = new Image();
+  let bananaLoaded = false;
+  bananaImage.onload = () => { bananaLoaded = true; };
+  bananaImage.src = 'assets/banana.png';
+  const BANANA_DRAW_SCALE = 1.3;
+  const BANANA_TILT = -0.4; // radians; matches the reference art's diagonal
+  const BANANA_TILT_VARIANCE = Math.PI / 4; // ±45° of random spread per banana
+
+  function drawBanana(g, cx, cy, size, dir, angle) {
+    if (!bananaLoaded) return;
+    const w = size;
+    const h = size * (bananaImage.height / bananaImage.width);
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(angle);
+    if (dir < 0) g.scale(-1, 1); // mirror so it leads with its tip when flying left
+    g.drawImage(bananaImage, -w / 2, -h / 2, w, h);
+    g.restore();
+  }
 
   const keyMap = {
     ArrowUp: 'up', KeyW: 'up',
@@ -78,7 +136,7 @@
   let CELL_H = 60;
   let SPRITE = 60;
   const MAX_CELL_W_RATIO = 3;
-  const MAX_CELL_H_RATIO = 1.5;
+  const MAX_CELL_H_RATIO = 1.7;
   let hazards = [];
   let gorillaShake = {}; // gorilla col -> seconds of shaking left
   let boss = { x: 3, dir: 1, windup: 0, reload: 0, nextThrowIn: 4 };
@@ -429,8 +487,9 @@
     hazards = [];
     const stretch = CELL_W / SPRITE;
     laneDefs.forEach((lane, row) => {
-      if (lane.type !== 'banana' && lane.type !== 'barrel') return;
-      const count = Math.max(lane.count, Math.round(lane.count * stretch));
+      if (lane.type !== 'banana' && lane.type !== 'stick') return;
+      const baseCount = (level === 1 && lane.level1Count != null) ? lane.level1Count : lane.count;
+      const count = Math.max(baseCount, Math.round(baseCount * stretch));
       for (let i = 0; i < count; i++) {
         hazards.push({
           row,
@@ -439,6 +498,9 @@
           radius: lane.radius,
           speed: lane.baseSpeed * speedMul(), // sprite widths per second
           x: ((COLS / count) * i + row * 0.4) % COLS,
+          // Random per-banana tilt, fixed for its lifetime, so a lane of
+          // bananas doesn't look like one sprite copy-pasted sideways.
+          angle: lane.type === 'banana' ? BANANA_TILT + (Math.random() * 2 - 1) * BANANA_TILT_VARIANCE : 0,
         });
       }
     });
@@ -498,7 +560,7 @@
     }
   }
 
-  // Poop lives in the same `hazards` array as bananas/barrels (type 'poop'),
+  // Poop lives in the same `hazards` array as bananas/sticks (type 'poop'),
   // but moves vertically: x is its column, y is its row-center position.
   function updateGorillas(dt) {
     nextDropIn -= dt;
@@ -565,13 +627,14 @@
     recordProgress();
   }
 
+  const INTRO_MS = 6100; // how long the "Let's go bananas!" screen shows
   function showIntro(callback) {
     const overlay = document.getElementById('introOverlay');
     overlay.classList.remove('hidden');
     setTimeout(() => {
       overlay.classList.add('hidden');
       callback();
-    }, 1100);
+    }, INTRO_MS);
   }
 
   // Non-blocking celebration: plays a chime and pops a small self-dismissing
@@ -760,7 +823,24 @@
   function updateHud() {
     document.getElementById('score').textContent = score;
     document.getElementById('level').textContent = level;
-    document.getElementById('lives').textContent = '🐒'.repeat(Math.max(lives, 0)) || '—';
+    renderLives(lives);
+  }
+
+  // Remaining lives are tiny copies of the player sprite, rendered once to
+  // an image and repeated.
+  let lifeIconUrl = null;
+  function renderLives(n) {
+    if (!lifeIconUrl) {
+      const px = 64;
+      const icon = document.createElement('canvas');
+      icon.width = icon.height = px;
+      const size = px * 0.94;
+      drawPlushGorilla(icon.getContext('2d'), px / 2, px / 2 + PLUSH_CENTER_Y * size, size, PLAYER_COLORS);
+      lifeIconUrl = icon.toDataURL();
+    }
+    const el = document.getElementById('lives');
+    el.innerHTML = `<img class="life-icon" src="${lifeIconUrl}" alt="">`.repeat(Math.max(n, 0)) || '—';
+    el.setAttribute('aria-label', `${Math.max(n, 0)} lives`);
   }
 
   // --- rendering ---
@@ -811,21 +891,10 @@
   window.addEventListener('resize', resizeCanvas);
   window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
 
-  // --- gorilla sprites: low-poly, flat-shaded, front-facing, modeled on
-  // Gorilla Tag avatars: no legs, a bulky floating torso, huge arms splayed
-  // out with hands planted flat, and a big head with a pale face mask. Used
-  // for the (brown) player and the splash dancer. ---
-  const PLAYER_COLORS = {
-    furLight: '#a0703f',
-    fur: '#7c522c',
-    furDark: '#57381d',
-    face: '#f0ebe4',
-    faceDark: '#cfc5b8',
-    brow: '#4a3522',
-    ink: '#1a100a',
-  };
-  // Player sprite size in px; the top-hat gorillas are drawn at 1.25x this.
-  const playerSize = () => SPRITE * 1.0; // visual only; the hit box is MONKEY_RADIUS
+  // --- player sprite size and shared drawing helpers ---
+  // The player is the plush gorilla (see drawPlushGorilla) in brown, with
+  // no hat. Size is visual only; the hit box is MONKEY_RADIUS.
+  const playerSize = () => SPRITE * 1.15;
   const CHEST_BEATS_PER_SEC = 4; // per arm; arms alternate, so 8 hits/sec
 
   function shape(g, points, color) {
@@ -838,134 +907,11 @@
     g.stroke();
   }
 
-  // A straight limb segment of width w between two points.
-  function limb(g, x0, y0, x1, y1, w, color) {
-    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
-    const nx = (-(y1 - y0) / len) * (w / 2);
-    const ny = ((x1 - x0) / len) * (w / 2);
-    shape(g, [x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny], color);
-  }
-
   function ellipseFill(g, x, y, rx, ry, color) {
     g.beginPath();
     g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
     g.fillStyle = color;
     g.fill();
-  }
-
-  // Drawn in a unit box (about ±0.5) centered on (cx, cy), scaled by size.
-  // Options:
-  //   hop   0..1 jump progress: lifts the body and swings the planted hands
-  //         up mid-hop (1 = standing).
-  //   beat  seconds into a chest-beat, or -1 when not beating. While
-  //         beating the arms come up in front of the torso, the fists
-  //         alternate onto the chest, and the mouth opens.
-  //   dead  X eyes and an "o" mouth (player after a hit).
-  //   angle rotation in radians (death spin, splash dance).
-  //   g     canvas context to draw on (defaults to the game canvas).
-  function drawGorilla(cx, cy, size, c, { hop = 1, beat = -1, dead = false, angle = 0, g = ctx } = {}) {
-    const lift = dead ? 0 : Math.sin(hop * Math.PI);
-    const beating = beat >= 0;
-    const bob = beating ? Math.abs(Math.sin(beat * Math.PI * 2 * CHEST_BEATS_PER_SEC)) * 0.03 : 0;
-    g.save();
-    g.translate(cx, cy - (lift * 0.08 + bob) * size);
-    if (angle) g.rotate(angle);
-    g.scale(size, size);
-    g.lineJoin = 'round';
-    g.lineWidth = 0.016;
-    g.strokeStyle = 'rgba(0, 0, 0, 0.4)';
-
-    // arms planted wide, hands flat on the ground (behind the torso)
-    if (!beating) {
-      for (const s of [-1, 1]) {
-        const upper = s < 0 ? c.furLight : c.fur;
-        const fore = s < 0 ? c.fur : c.furDark;
-        const ex = s * 0.4;
-        const ey = 0.12 - lift * 0.06;
-        const wx = s * (0.52 - lift * 0.06);
-        const wy = 0.37 - lift * 0.14;
-        limb(g, s * 0.27, -0.01, ex, ey, 0.15, upper);
-        limb(g, ex, ey, wx, wy, 0.19, fore);
-        ellipseFill(g, ex, ey, 0.07, 0.07, fore); // elbow joint, hides the seam
-        shape(g, [wx - s * 0.07, wy - 0.02, wx + s * 0.09, wy - 0.01, wx + s * 0.13, wy + 0.06,
-          wx + s * 0.02, wy + 0.08, wx - s * 0.08, wy + 0.07], fore); // flat hand
-        g.beginPath(); // finger creases
-        g.moveTo(wx + s * 0.03, wy + 0.02); g.lineTo(wx + s * 0.06, wy + 0.075);
-        g.moveTo(wx + s * 0.08, wy + 0.02); g.lineTo(wx + s * 0.1, wy + 0.07);
-        g.stroke();
-      }
-    }
-
-    // torso: lit upper-left, mid upper-right, shadowed underside
-    shape(g, [-0.3, -0.06, 0, -0.06, 0, 0.18, -0.33, 0.1], c.furLight);
-    shape(g, [0, -0.06, 0.3, -0.06, 0.33, 0.1, 0, 0.18], c.fur);
-    shape(g, [-0.33, 0.1, 0, 0.18, 0.33, 0.1, 0.24, 0.3, 0.08, 0.36, -0.08, 0.36, -0.24, 0.3], c.furDark);
-    shape(g, [-0.22, 0, 0, 0.02, 0, 0.21, -0.12, 0.25, -0.23, 0.14], c.face); // chest plate, lit half
-    shape(g, [0, 0.02, 0.22, 0, 0.23, 0.14, 0.12, 0.25, 0, 0.21], c.faceDark); // shaded half
-
-    if (beating) {
-      for (const s of [-1, 1]) {
-        // 0 = fist pulled back up, 1 = fist on the chest; the arms are half a
-        // cycle apart so they alternate.
-        const phase = beat * Math.PI * 2 * CHEST_BEATS_PER_SEC + (s < 0 ? 0 : Math.PI);
-        const v = 0.5 + 0.5 * Math.sin(phase);
-        const fx = s * (0.34 - 0.22 * v);
-        const fy = -0.16 + 0.24 * v;
-        const tone = s < 0 ? c.furLight : c.furDark;
-        limb(g, s * 0.27, -0.02, s * 0.46, 0.08, 0.15, tone);
-        limb(g, s * 0.46, 0.08, fx, fy, 0.17, tone);
-        ellipseFill(g, s * 0.46, 0.08, 0.08, 0.08, tone); // elbow joint
-        shape(g, [fx - 0.07, fy - 0.06, fx + 0.07, fy - 0.06, fx + 0.075, fy + 0.06, fx - 0.075, fy + 0.06], c.fur); // fist
-      }
-    }
-
-    // head: lit cap, mid left, shadowed right
-    shape(g, [-0.12, -0.49, 0.12, -0.49, 0.23, -0.4, 0, -0.36, -0.23, -0.4], c.furLight);
-    shape(g, [-0.23, -0.4, 0, -0.36, 0, -0.02, -0.1, -0.02, -0.21, -0.08, -0.26, -0.25], c.fur);
-    shape(g, [0.23, -0.4, 0.26, -0.25, 0.21, -0.08, 0.1, -0.02, 0, -0.02, 0, -0.36], c.furDark);
-
-    // pale face mask
-    shape(g, [-0.19, -0.34, 0.19, -0.34, 0.22, -0.24, 0.16, -0.12, 0.09, -0.05, -0.09, -0.05, -0.16, -0.12, -0.22, -0.24], c.face);
-
-    // brows sit just above the eyes and never overlap them
-    const slope = 0.025;
-    for (const s of [-1, 1]) {
-      shape(g, [s * 0.18, -0.335 - slope, s * 0.035, -0.325, s * 0.035, -0.295, s * 0.17, -0.305 - slope], c.brow);
-    }
-
-    // eyes: big white eyeballs, black pupils looking slightly inward
-    for (const s of [-1, 1]) ellipseFill(g, s * 0.08, -0.245, 0.05, 0.042, '#ffffff');
-    g.strokeStyle = c.ink;
-    if (dead) {
-      g.lineWidth = 0.03;
-      g.lineCap = 'round';
-      for (const s of [-1, 1]) {
-        const ex = s * 0.08;
-        const ey = -0.245;
-        const r = 0.028;
-        g.beginPath();
-        g.moveTo(ex - r, ey - r); g.lineTo(ex + r, ey + r);
-        g.moveTo(ex + r, ey - r); g.lineTo(ex - r, ey + r);
-        g.stroke();
-      }
-    } else {
-      for (const s of [-1, 1]) {
-        ellipseFill(g, s * 0.072, -0.24, 0.024, 0.024, c.ink);
-        ellipseFill(g, s * 0.072 - 0.008, -0.248, 0.007, 0.007, '#ffffff'); // glint
-      }
-    }
-
-    // nose and mouth
-    for (const s of [-1, 1]) ellipseFill(g, s * 0.03, -0.16, 0.018, 0.011, c.ink);
-    if (dead) {
-      ellipseFill(g, 0, -0.1, 0.022, 0.022, c.ink);
-    } else if (beating) {
-      ellipseFill(g, 0, -0.1, 0.06, 0.035, c.ink); // roaring
-    } else {
-      shape(g, [-0.06, -0.105, 0.06, -0.105, 0.05, -0.09, -0.05, -0.09], c.ink);
-    }
-
-    g.restore();
   }
 
   // Two full spins that ease out over the first DEATH_SPIN_TIME seconds of
@@ -1113,14 +1059,22 @@
     g.restore();
   }
 
-  // --- top-hat gorillas (the three in the goal row) ---
-  // Modeled on the owner's second plush reference: a sitting black plush
-  // with grey ears, face and chest, a long grey nose ridge, eyes outlined in
-  // light-blue stitching, a stitched mouth, arms resting down in front with
-  // the hands on the ground, and a tall black top hat with a grey band.
-  // Smooth like the boss, since it's a plush. `beat` works like
-  // drawGorilla's: while chest-beating, the fists alternate onto the chest,
-  // the mouth opens, and the hat bounces.
+  // --- plush gorillas: the three in the goal row, and the player ---
+  // Modeled on the owner's second plush reference: a sitting plush with
+  // pale ears, face and chest, a long nose ridge, eyes outlined in
+  // light-blue stitching, a stitched mouth, and arms resting down in front
+  // with the hands on the ground. The goal-row gorillas are black with a
+  // tall top hat (HAT_PLUSH_COLORS, `hat: true`); the player is the same
+  // plush in brown with no hat (PLAYER_COLORS). Smooth like the boss, since
+  // it's a plush. Drawn in a unit box around (cx, cy), scaled by size; the
+  // body spans about y -0.53 (head) to 0.46 (hands). Options:
+  //   beat  seconds into a chest-beat, or -1. The fists alternate onto the
+  //         chest, the mouth opens, and the hat bounces.
+  //   hop   0..1 jump progress: lifts the body and tucks the hands up
+  //         mid-hop (1 = sitting).
+  //   dead  X eyes and an "o" mouth (player after a hit).
+  //   angle rotation in radians (death spin, splash dance).
+  //   hat   draw the top hat.
   const HAT_PLUSH_COLORS = {
     fur: '#1f2024',
     furLight: '#34363b',
@@ -1134,13 +1088,26 @@
     hatLight: '#2a2b31',
     band: '#8d9097',
   };
+  const PLAYER_COLORS = {
+    fur: '#6b4426',
+    furLight: '#8a5b35',
+    furDark: '#472c17',
+    face: '#b98d62',
+    faceLight: '#cfa77d',
+    stitch: '#a9d9e2',
+    eye: '#eef6f7',
+    ink: '#1a100a',
+  };
+  // Shift (in sprite units) that centers the plush's head-to-hands span on a point.
+  const PLUSH_CENTER_Y = 0.035;
 
-  function drawHatGorilla(g, cx, cy, size, { beat = -1 } = {}) {
-    const c = HAT_PLUSH_COLORS;
+  function drawPlushGorilla(g, cx, cy, size, c, { beat = -1, hop = 1, dead = false, angle = 0, hat = false } = {}) {
     const beating = beat >= 0;
+    const lift = dead ? 0 : Math.sin(hop * Math.PI);
     const bob = beating ? Math.abs(Math.sin(beat * Math.PI * 2 * CHEST_BEATS_PER_SEC)) * 0.03 : 0;
     g.save();
-    g.translate(cx, cy - bob * size);
+    g.translate(cx, cy - (lift * 0.08 + bob) * size);
+    if (angle) g.rotate(angle);
     g.scale(size, size);
     g.lineJoin = 'round';
     g.lineCap = 'round';
@@ -1158,7 +1125,7 @@
         const v = 0.5 + 0.5 * Math.sin(phase); // 1 = fist on the chest
         hand = [sx * lerp(0.34, 0.08, v), lerp(-0.1, 0.12, v)];
       } else {
-        hand = [sx * 0.2, 0.38];
+        hand = [sx * (0.2 + lift * 0.08), 0.38 - lift * 0.14];
       }
       g.beginPath();
       g.moveTo(sx * 0.22, -0.02);
@@ -1192,13 +1159,24 @@
       g.strokeStyle = c.stitch;
       g.lineWidth = 0.014;
       g.stroke();
-      ellipseFill(g, -sx * 0.008, 0.004, 0.02, 0.02, c.ink);
+      if (dead) {
+        g.beginPath();
+        g.moveTo(-0.024, -0.024); g.lineTo(0.024, 0.024);
+        g.moveTo(0.024, -0.024); g.lineTo(-0.024, 0.024);
+        g.strokeStyle = c.ink;
+        g.lineWidth = 0.02;
+        g.stroke();
+      } else {
+        ellipseFill(g, -sx * 0.008, 0.004, 0.02, 0.02, c.ink);
+      }
       g.restore();
     }
 
     // nostrils and a stitched "w" mouth (open while chest-beating)
     for (const sx of [-1, 1]) ellipseFill(g, sx * 0.022, -0.165, 0.013, 0.009, c.ink);
-    if (beating) {
+    if (dead) {
+      ellipseFill(g, 0, -0.12, 0.022, 0.022, c.ink);
+    } else if (beating) {
       ellipseFill(g, 0, -0.12, 0.045, 0.028, c.ink);
     } else {
       g.beginPath();
@@ -1211,27 +1189,62 @@
     }
 
     // tall top hat with a grey band; a faint rim keeps it readable on black
-    g.save();
-    g.translate(0, -0.47 - bob * 2.5);
-    g.rotate(-0.06);
-    g.lineWidth = 0.014;
-    g.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-    shape(g, [-0.15, 0, 0, 0, 0, -0.36, -0.14, -0.36], c.hatLight);
-    shape(g, [0, 0, 0.15, 0, 0.14, -0.36, 0, -0.36], c.hat);
-    shape(g, [-0.15, -0.02, 0.15, -0.02, 0.15, -0.055, -0.15, -0.055], c.band);
-    shape(g, [-0.27, -0.015, 0.27, -0.015, 0.28, 0.025, -0.28, 0.025], c.hat); // brim
-    g.restore();
+    if (hat) {
+      g.save();
+      g.translate(0, -0.47 - bob * 2.5);
+      g.rotate(-0.06);
+      g.lineWidth = 0.014;
+      g.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      shape(g, [-0.15, 0, 0, 0, 0, -0.36, -0.14, -0.36], c.hatLight);
+      shape(g, [0, 0, 0.15, 0, 0.14, -0.36, 0, -0.36], c.hat);
+      shape(g, [-0.15, -0.02, 0.15, -0.02, 0.15, -0.055, -0.15, -0.055], c.band);
+      shape(g, [-0.27, -0.015, 0.27, -0.015, 0.28, 0.025, -0.28, 0.025], c.hat); // brim
+      g.restore();
+    }
 
     g.restore();
   }
 
-  // The canopy band above the goal row, with the branch the boss walks on.
+  // --- thrown stick hazard ---
+  // Modeled on the owner's reference: a low-poly brown stick, flat-shaded
+  // (a lit and a shadowed half on each segment), with a short bent fork to
+  // one side and a longer one pointing up near the top. Drawn in a unit box
+  // around (cx, cy), scaled by size and rotated by angle. The hit box is
+  // still the lane's round radius.
+  const STICK_COLORS = { light: '#86603a', dark: '#4a3019', end: '#a57c52' };
+
+  // A tapered two-tone segment from (x0, y0) (width w0) to (x1, y1) (width w1).
+  function stickSegment(g, x0, y0, x1, y1, w0, w1) {
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const nx = -(y1 - y0) / len;
+    const ny = (x1 - x0) / len;
+    shape(g, [x0 + nx * w0 / 2, y0 + ny * w0 / 2, x1 + nx * w1 / 2, y1 + ny * w1 / 2, x1, y1, x0, y0], STICK_COLORS.light);
+    shape(g, [x0, y0, x1, y1, x1 - nx * w1 / 2, y1 - ny * w1 / 2, x0 - nx * w0 / 2, y0 - ny * w0 / 2], STICK_COLORS.dark);
+  }
+
+  function drawStick(g, cx, cy, size, angle) {
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(angle);
+    g.scale(size, size);
+    g.lineJoin = 'round';
+    g.lineWidth = 0.02;
+    g.strokeStyle = 'rgba(20, 10, 0, 0.55)';
+    // forks first so the main shaft covers their joints
+    stickSegment(g, -0.12, -0.2, -0.38, -0.2, 0.05, 0.04); // short side fork...
+    stickSegment(g, -0.38, -0.2, -0.45, -0.14, 0.04, 0.035); // ...with a bent tip
+    stickSegment(g, 0.04, -0.04, 0.1, -0.24, 0.055, 0.045); // upright fork
+    stickSegment(g, 0.1, -0.24, 0.13, -0.4, 0.045, 0.035);
+    stickSegment(g, 0.42, 0.46, 0.04, -0.02, 0.1, 0.08); // main shaft
+    stickSegment(g, 0.04, -0.02, -0.34, -0.46, 0.08, 0.06);
+    ellipseFill(g, 0.42, 0.46, 0.045, 0.03, STICK_COLORS.end); // cut end
+    g.restore();
+  }
+
+  // The branch the boss walks on, in the band above the goal row. The band's
+  // own background is the jungle photo (drawn by draw() before this runs);
+  // this just adds the branch and leaf clusters on top of it.
   function drawBossBand(width, bandH) {
-    const grad = ctx.createLinearGradient(0, 0, 0, bandH);
-    grad.addColorStop(0, '#0a1c0d');
-    grad.addColorStop(1, '#17391c');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, bandH);
     const branchY = bandH - 0.1 * CELL_H;
     ctx.fillStyle = '#5a3a1e';
     ctx.fillRect(0, branchY - 0.03 * CELL_H, width, 0.08 * CELL_H);
@@ -1253,7 +1266,9 @@
   function draw() {
     const width = CELL_W * COLS;
     const bandH = BOSS_BAND_ROWS * CELL_H;
-    ctx.clearRect(0, 0, width, bandH + CELL_H * ROWS);
+    const totalH = bandH + CELL_H * ROWS;
+    ctx.clearRect(0, 0, width, totalH);
+    if (bgLoaded) drawImageCover(ctx, bgImage, 0, 0, width, totalH);
     drawBossBand(width, bandH);
 
     // Everything below is in grid space: row 0 starts at y = 0, and the
@@ -1278,10 +1293,10 @@
     // enemy gorillas; a shaking gorilla is chest-beating before its drop
     GORILLA_COLS.forEach(col => {
       const beat = gorillaShake[col] > 0 ? GORILLA_SHAKE_TIME - gorillaShake[col] : -1;
-      // 125% of the player's size; hands rest on the bottom of row 0 and the
-      // hat pokes up into the boss band.
-      const size = playerSize() * 1.25;
-      drawHatGorilla(ctx, (col + 0.5) * CELL_W, CELL_H - 0.46 * size, size, { beat });
+      // A bit bigger than the player; hands rest on the bottom of row 0 and
+      // the hat pokes up into the boss band.
+      const size = SPRITE * 1.375;
+      drawPlushGorilla(ctx, (col + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true });
     });
 
     // gaps
@@ -1294,7 +1309,8 @@
         // Emoji glyphs inherit fillStyle's alpha, so reset to opaque before
         // any fillText or everything drawn after this comes out faded.
         ctx.fillStyle = '#fff';
-        drawGorilla(cx, cy, playerSize() * 0.9, PLAYER_COLORS);
+        const size = playerSize() * 0.9;
+        drawPlushGorilla(ctx, cx, cy + PLUSH_CENTER_Y * size, size, PLAYER_COLORS);
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2;
@@ -1317,16 +1333,31 @@
     ctx.fillStyle = '#fff'; // opaque again before emoji hazards
 
     // hazards
-    const HAZARD_EMOJI = { banana: '🍌', barrel: '🛢️', poop: '💩' };
+    const HAZARD_EMOJI = { poop: '💩' };
     hazards.forEach(h => {
-      ctx.font = `${h.radius * 2 * SPRITE}px ${EMOJI_FONT}`;
       const rowPos = h.type === 'poop' ? h.y : h.row;
-      ctx.fillText(HAZARD_EMOJI[h.type], (h.x + 0.5) * CELL_W, (rowPos + 0.5) * CELL_H);
+      const hx = (h.x + 0.5) * CELL_W;
+      const hy = (rowPos + 0.5) * CELL_H;
+      if (h.type === 'stick') {
+        // tumbles end over end: spin follows distance travelled, in sprite widths
+        drawStick(ctx, hx, hy, h.radius * 2.6 * SPRITE, h.x * (CELL_W / SPRITE) * 1.3 * h.dir);
+        return;
+      }
+      if (h.type === 'banana') {
+        drawBanana(ctx, hx, hy, h.radius * 2 * BANANA_DRAW_SCALE * SPRITE, h.dir, h.angle);
+        return;
+      }
+      // Drawn size only; POOP_DRAW_SCALE doesn't touch h.radius, which is
+      // still what hazardHit() uses, so this is visual-only and doesn't
+      // change the hit box.
+      const drawScale = h.type === 'poop' ? POOP_DRAW_SCALE : 1;
+      ctx.font = `${h.radius * 2 * drawScale * SPRITE}px ${EMOJI_FONT}`;
+      ctx.fillText(HAZARD_EMOJI[h.type], hx, hy);
     });
 
     // monkey
     const pos = currentMonkeyPos();
-    drawGorilla((pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H, playerSize(), PLAYER_COLORS, {
+    drawPlushGorilla(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H + PLUSH_CENTER_Y * playerSize(), playerSize(), PLAYER_COLORS, {
       hop: monkey.animT,
       dead: monkey.dead,
       angle: monkey.dead ? deathSpinAngle() : 0,
@@ -1334,31 +1365,35 @@
     ctx.restore();
   }
 
-  // --- splash dancer ---
-  // The player gorilla dancing on the start screen, drawn with the same
-  // drawGorilla() as in-game so it always matches. Eyes are never covered.
-  // One DANCE_PERIOD loop: bounce-and-sway groove, a chest-beat, then a
-  // hop-spin that lands facing front again.
-  const startOverlayEl = document.getElementById('startOverlay');
-  const splashCanvas = document.getElementById('splashDancer');
-  const splashCtx = splashCanvas.getContext('2d');
-  const DANCE_PERIOD = 4.2;
-  let splashSize = 0;
-  window.addEventListener('resize', () => { splashSize = 0; }); // re-measure next frame
-
-  function sizeSplashCanvas() {
-    const cssSize = splashCanvas.getBoundingClientRect().width;
-    if (!cssSize) return;
-    const dpr = window.devicePixelRatio || 1;
-    splashSize = cssSize;
-    splashCanvas.width = Math.round(cssSize * dpr);
-    splashCanvas.height = Math.round(cssSize * dpr);
-    splashCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // --- player gorilla scenes: splash/intro dance and the game-over
+  // knockout, all drawn with the same drawPlushGorilla() as in-game so
+  // they always match. Eyes are never covered. Each scene is a square
+  // canvas that re-measures itself after a resize (or the first time its
+  // overlay is visible) and only draws while that overlay is showing.
+  function makeScene(canvasId, overlayId, drawFn) {
+    const canvas = document.getElementById(canvasId);
+    const overlay = document.getElementById(overlayId);
+    const g = canvas.getContext('2d');
+    let size = 0;
+    window.addEventListener('resize', () => { size = 0; }); // re-measure next frame
+    return ms => {
+      if (overlay.classList.contains('hidden')) return;
+      if (!size) {
+        const cssSize = canvas.getBoundingClientRect().width;
+        if (!cssSize) return;
+        const dpr = window.devicePixelRatio || 1;
+        size = cssSize;
+        canvas.width = canvas.height = Math.round(cssSize * dpr);
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      drawFn(g, size, ms);
+    };
   }
 
-  function drawSplashDancer(ms) {
-    if (!splashSize) sizeSplashCanvas();
-    if (!splashSize) return;
+  // One DANCE_PERIOD loop: bounce-and-sway groove, a chest-beat, then a
+  // hop-spin that lands facing front again.
+  const DANCE_PERIOD = 4.2;
+  function drawDancer(g, s, ms) {
     const t = (ms / 1000) % DANCE_PERIOD;
     let hop = 1;
     let beat = -1;
@@ -1374,16 +1409,32 @@
       angle = Math.PI * 2 * (1 - (1 - p) ** 2);
     }
 
-    const s = splashSize;
-    const size = s * 0.66; // arms splay wide, so leave room for the hands
+    const size = s * 0.8;
     const lift = Math.sin(hop * Math.PI);
-    splashCtx.clearRect(0, 0, s, s);
-    splashCtx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-    splashCtx.beginPath();
-    splashCtx.ellipse(s / 2, s * 0.9, s * (0.2 - lift * 0.05), s * 0.035, 0, 0, Math.PI * 2);
-    splashCtx.fill(); // shadow shrinks as he jumps
-    drawGorilla(s / 2, s * 0.52, size, PLAYER_COLORS, { hop, beat, angle, g: splashCtx });
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    g.beginPath();
+    g.ellipse(s / 2, s * 0.9, s * (0.2 - lift * 0.05), s * 0.035, 0, 0, Math.PI * 2);
+    g.fill(); // shadow shrinks as he jumps
+    drawPlushGorilla(g, s / 2, s * 0.88 - 0.46 * size, size, PLAYER_COLORS, { hop, beat, angle });
   }
+  const drawSplashDancer = makeScene('splashDancer', 'startOverlay', drawDancer);
+  const drawIntroDancer = makeScene('introDancer', 'introOverlay', drawDancer);
+
+  // Game-over: the player lying dazed, tipped at the death-spin's resting
+  // angle (DEATH_TILT) with a slow woozy sway layered on top; no hop, since
+  // drawPlushGorilla forces lift to 0 while dead.
+  function drawKnockedOut(g, s, ms) {
+    const size = s * 0.8;
+    const angle = DEATH_TILT + Math.sin(ms / 1000 * 1.1) * 0.05;
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    g.beginPath();
+    g.ellipse(s / 2, s * 0.9, s * 0.2, s * 0.035, 0, 0, Math.PI * 2);
+    g.fill();
+    drawPlushGorilla(g, s / 2, s * 0.88 - 0.46 * size, size, PLAYER_COLORS, { dead: true, angle });
+  }
+  const drawGameOverDancer = makeScene('gameOverDancer', 'gameOverOverlay', drawKnockedOut);
 
   // --- main loop ---
   function loop(t) {
@@ -1414,7 +1465,9 @@
     }
 
     draw();
-    if (!startOverlayEl.classList.contains('hidden')) drawSplashDancer(t);
+    drawSplashDancer(t);
+    drawIntroDancer(t);
+    drawGameOverDancer(t);
     requestAnimationFrame(loop);
   }
 
@@ -1422,6 +1475,7 @@
   resizeCanvas();
   resetMonkey();
   spawnHazards();
+  renderLives(3);
   draw();
   requestAnimationFrame(loop);
 })();

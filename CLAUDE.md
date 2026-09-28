@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Banana Dodge
 
 A Frogger-style browser game: a monkey crosses jungle lanes of thrown
-bananas and rolling barrels, dodging poop the three gorillas randomly
+bananas and tumbling sticks, dodging poop the three gorillas randomly
 drop, to reach one of four gaps between those gorillas at the top of
 the board. Live at https://banana-dodge.vercel.app.
 
@@ -66,7 +66,7 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - **Grid**: 7 columns x 9 rows, defined in `laneDefs`. Row 0 is the
   goal row (top), row 8 is the start row (bottom).
 - **Lane types**: `goal`, `start`, `safe` (median strips), `banana`
-  (bananas fly horizontally), `barrel` (barrels roll horizontally).
+  (bananas fly horizontally), `stick` (low-poly sticks tumble horizontally, drawn by `drawStick()` rather than an emoji).
   Each hazard lane has a direction, base speed, hazard count, and
   hazard radius.
 - **Goal row**: gorillas sit at columns 1, 3, 5 (`GORILLA_COLS`) and
@@ -121,11 +121,41 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   reference is a plush; the hat is clipped rainbow stripes
   (`drawPartyHat()`). Reset with the other gorillas in `spawnHazards()`.
 - **Canvas layout**: the canvas is `ROWS + BOSS_BAND_ROWS` row-heights
-  tall (see `resizeCanvas()`). `draw()` paints the band
-  (`drawBossBand()`), then `translate`s down by the band height so
-  everything else keeps the original grid coordinates with row 0 at
-  y = 0; the boss and his poop simply draw at negative y. Grid logic
-  (movement, collisions, hazard rows) never sees the band.
+  tall (see `resizeCanvas()`). `draw()` paints the jungle background photo
+  (see Background photo below), then the band (`drawBossBand()`), then
+  `translate`s down by the band height so everything else keeps the
+  original grid coordinates with row 0 at y = 0; the boss and his poop
+  simply draw at negative y. Grid logic (movement, collisions, hazard
+  rows) never sees the band.
+- **Banana sprite**: `drawBanana()` draws the cartoon banana image
+  (`assets/banana.png`, an owner-supplied reference with its white
+  background flood-filled to transparent) instead of the 🍌 emoji.
+  Loads once (`bananaImage`/`bananaLoaded`, same pattern as `bgImage`);
+  `draw()` skips it until loaded. Drawn at `h.radius * 2 *
+  BANANA_DRAW_SCALE * SPRITE` wide (1.3×, aspect-correct height from the
+  image) — visual only, `h.radius` itself is untouched so `hazardHit()`'s
+  hit box didn't change. Each banana hazard gets its own random tilt
+  (`h.angle`, assigned once in `spawnHazards()`, within
+  `±BANANA_TILT_VARIANCE` of `BANANA_TILT`, the reference art's diagonal)
+  so a lane of bananas doesn't look like one sprite copy-pasted sideways;
+  it's fixed for that hazard's lifetime, not re-rolled per frame or on
+  wrap. Also mirrored (`g.scale(-1, 1)`) when `h.dir < 0` so it still
+  reads as flying the way it's actually moving.
+- **Background photo**: `bgImage` (`assets/bg-jungle.jpg`, an
+  owner-supplied reference of a Gorilla Tag-style forest) loads once at
+  startup; `draw()` skips it until `bgLoaded` flips true, leaving the
+  plain `#game` CSS background for the first frame or two. It's drawn
+  by `drawImageCover()` across the whole canvas (band + grid) before
+  anything else, scaled to cover and cropped rather than stretched, so
+  the photo doesn't distort the way lane colors are allowed to stretch.
+  `drawBossBand()` no longer paints its own flat gradient — just the
+  branch and leaf clusters on top of the photo. `LANE_COLORS` are
+  translucent (`rgba(...)`) rather than opaque, and lighter than the raw
+  photo, so each lane reads as a tinted overlay hazards stand out
+  against — the alpha was raised from an initial ~0.4–0.55 to ~0.6–0.72
+  after the first pass made bananas/sticks/poop hard to track against
+  the busier parts of the photo (rocks, the cave mouth). If you add a
+  lane type, match that range rather than going more transparent.
 - **Collision**: `hazardHit()` checks the monkey's current row
   (rounded from its mid-hop tween position) against hazards in that
   row using simple radius overlap, done in pixels: horizontal distance
@@ -149,7 +179,12 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - **Level progression**: clearing a level (`nextLevel()`) resets the
   gaps and monkey position, keeps score/lives, and multiplies hazard
   speed by `speedMul()` (currently `1 + (level-1)*0.22`, compounding
-  each level — no cap, no new hazard patterns yet).
+  each level — no cap, no new hazard patterns yet). Hazard *counts* are
+  otherwise fixed across levels, except one lane: row 5's banana lane
+  (the first banana lane the player reaches leaving the start row) has a
+  `level1Count` on its `laneDefs` entry that `spawnHazards()` uses
+  instead of `count` while `level === 1`, easing that first crossing;
+  level 2 on uses the normal count.
 - **Controls**: arrow keys / WASD (`keyMap`), plus an on-screen
   touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`. Enter
   or Space clicks Play (splash) or Play Again (game over) when that
@@ -195,7 +230,7 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   everything else, regardless of breakpoint or the canvas's previous
   size. Cells are **not square**: `CELL_W` and `CELL_H` stretch
   independently to fill the space (capped by `MAX_CELL_W_RATIO` = 3 and
-  `MAX_CELL_H_RATIO` = 1.5 so lanes don't get absurd on ultrawide
+  `MAX_CELL_H_RATIO` = 1.7 so lanes don't get absurd on ultrawide
   screens), and every sprite, the gap ring, and collision radii are
   sized by `SPRITE = min(CELL_W, CELL_H)` so emoji never distort. Rule
   of thumb when drawing: positions use `CELL_W`/`CELL_H`, sizes use
@@ -207,45 +242,39 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   and squashed every sprite sideways. `resizeCanvas()` now reads back
   the canvas's rendered width as a safeguard, so a clamp would shrink
   the board instead of distorting it.
-- **Gorilla sprites**: three different looks, each modeled on a
-  reference image the owner supplied. All positions use `CELL_W`/`CELL_H`
-  and all sizes derive from `SPRITE`.
-  - **Player** (and parked players in filled gaps, and the splash
-    dancer): `drawGorilla(cx, cy, size, PLAYER_COLORS, { hop, beat,
-    dead, angle, g })`, modeled on a Gorilla Tag avatar: low-poly,
-    flat-shaded (light / mid / dark facets), front-facing, **no legs**
-    (a bulky floating torso), huge arms splayed wide with hands planted
-    flat, a big head with a pale face mask, big white eyes, dark brows,
-    a two-nostril nose, and a pale chest plate. Brown fur. Built from
-    polygons via `shape()`/`limb()`/`ellipseFill()`. Size is
-    `playerSize()` (1.0 × `SPRITE`), which is visual only; collisions
-    still use `MONKEY_RADIUS`, so the sprite can be resized without
-    changing gameplay. Options:
-    - `hop`: jump progress (pass `monkey.animT`); lifts the body and
-      swings the planted hands up.
-    - `beat`: seconds into a chest-beat; the arms come in front of the
-      torso and alternate fists onto the chest at
-      `CHEST_BEATS_PER_SEC`, and the mouth opens (splash dance).
-    - `dead` / `angle`: X eyes and an "o" mouth, rotated by
-      `deathSpinAngle()` (two eased spins, settling tipped over).
-    - `g`: which canvas context to draw on (default: the game canvas).
-  - **The three goal-row gorillas**: `drawHatGorilla(g, cx, cy, size,
-    { beat })` (`HAT_PLUSH_COLORS`), modeled on a top-hat Gorilla Tag
-    plush: smooth, not faceted. A sitting black plush with grey ears,
-    face and chest, a long grey nose ridge, eyes outlined in light-blue
-    stitching, a stitched "w" mouth, arms resting down in front with
-    hands on the ground, and a tall black top hat with a grey band (a
-    faint light rim keeps it readable on the black head). Drawn at
-    1.25 × `playerSize()`, standing on the bottom of row 0 with the hat
-    reaching up into the boss band (the boss draws in front of it when
-    he walks past). `beat` is `GORILLA_SHAKE_TIME - gorillaShake[col]`
-    while shaking, else -1; it bounces the body and hat, opens the
-    mouth, and alternates fists onto the chest.
+- **Gorilla sprites**: the player and the three goal-row gorillas share
+  one drawing, `drawPlushGorilla(g, cx, cy, size, colors, { beat, hop,
+  dead, angle, hat })`, modeled on a top-hat Gorilla Tag plush the owner
+  supplied: smooth, not faceted. A sitting plush with pale ears, face and
+  chest, a long nose ridge, eyes outlined in light-blue stitching, a
+  stitched "w" mouth, and arms resting down in front with hands on the
+  ground. All positions use `CELL_W`/`CELL_H` and all sizes derive from
+  `SPRITE`. The unit-box body spans about y -0.53 to 0.46, so add
+  `PLUSH_CENTER_Y * size` to cy to center it on a point. Options:
+  - `beat`: seconds into a chest-beat (-1 = none); bounces the body (and
+    hat), opens the mouth, alternates fists onto the chest at
+    `CHEST_BEATS_PER_SEC`.
+  - `hop`: jump progress (pass `monkey.animT`); lifts the body and tucks
+    the hands up.
+  - `dead` / `angle`: X eyes and an "o" mouth, rotated by
+    `deathSpinAngle()` (two eased spins, settling tipped over).
+  - `hat`: draws the tall black top hat with a grey band.
+  - **Player** (also parked players in filled gaps at 0.9×, the splash
+    dancer, and the HUD lives icons): brown `PLAYER_COLORS`, no hat.
+    Size is `playerSize()` (1.15 × `SPRITE`), visual only; collisions
+    still use `MONKEY_RADIUS`. The HUD lives are `<img class="life-icon">`
+    tags repeated by `renderLives()`, all using one small image of the
+    player that is drawn on first use and cached as a data URL.
+  - **The three goal-row gorillas**: black `HAT_PLUSH_COLORS` with
+    `hat: true`, drawn at 1.375 × `SPRITE`, standing on the bottom of row
+    0 with the hat reaching up into the boss band (the boss draws in
+    front of it when he walks past). `beat` is `GORILLA_SHAKE_TIME -
+    gorillaShake[col]` while shaking, else -1.
   - **The boss**: `drawBoss()`, see Boss gorilla.
   The owner asked specifically that the eyes never be covered: brows sit
-  just above the eyes, and nothing (hats, shades) overlaps them. The HUD
-  lives counter still uses 🐒 text, and the intro / level-clear /
-  game-over screens still use the old SVG cartoon monkey rig.
+  just above the eyes, and nothing (hats, shades) overlaps them. The
+  level-clear and game-over screens still use the old SVG cartoon
+  monkey rig.
 - **Canvas emoji and `fillStyle`**: color emoji drawn with `fillText`
   take on the alpha of the current `fillStyle`. `draw()` resets
   `fillStyle` to opaque `#fff` before emoji and right after the
@@ -267,62 +296,73 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   the game-over screen shows "New high score!". It deliberately does
   **not** fire when there was no previous record (best of 0), so a
   first-ever game doesn't get confetti for its first 50 points.
-- **Splash screen** (`#startOverlay.splash`): a title card
-  (`.splash-card`) with a kicker line, a two-tone "Banana / Dodge"
-  title, a spotlight stage holding `<canvas id="splashDancer">`, the
-  tagline, best score / highest level stat tiles, a big Play button,
-  and a controls hint (keyboard version, or a touch version via
-  `@media (hover: none) and (pointer: coarse)`). The dancer is the
-  player gorilla drawn with `drawGorilla(..., { g: splashCtx })` by
-  `drawSplashDancer()`, called from the main `loop()` only while the
-  splash is visible (no separate rAF). One `DANCE_PERIOD` (4.2s) loop:
-  bounce-and-sway groove, chest-beat, hop-spin. The splash card fades
-  in with a CSS animation, so a static renderer (e.g. Quick Look)
-  shows it invisible; disable the animation to inspect the layout.
-- **Other overlay screens**: three more screens (two full-screen, one
-  toast), each centered on a hand-built SVG monkey (inline `<svg>` per overlay in `index.html`,
-  not an emoji) with independently animated limbs. The rig is a set
-  of `<g>` groups (`.m-head`, `.m-tail`, `.m-arm-left/right`,
-  `.m-leg-left/right`, `.m-eyes`, `.m-brow-left/right`) each given a
-  `transform-origin` at its joint and animated with its own CSS
-  keyframes in `banana-dodge.css` — arms swing at the shoulder, legs
-  kick at the hip, the tail swishes at its base, eyes blink via
-  `scaleY`. A given overlay's expression (sunglasses, eyebrow angle,
-  mouth shape, cheek flush) is just different static SVG paths drawn
-  into the same anatomy, one full copy per state:
-  - `#introOverlay` — `.monkey-cool` (sunglasses pushed up on his
-    forehead so the eyes show, arm-pump/leg-kick dance), shown via `showIntro(callback)` for ~1.1s before both
-    `startBtn` and `restartBtn` hand off to `newRun()`. Gameplay is
-    paused (not yet started) while this shows.
-  - `#levelClearOverlay` — `.monkey-happy` (squash-and-stretch jump,
-    arms raised in a cheer, sparkle emoji orbiting), triggered by
-    `celebrateLevelClear(clearedLevel)` when all 4 gaps are filled.
-    Unlike the other three, this one is **not** a blocking full-screen
-    modal (class `toast`, not `overlay`) and never touches
-    `gameRunning` — `nextLevel()` runs immediately, gameplay never
-    pauses, and the toast is a small self-dismissing badge driven
-    entirely by the `toastPop` CSS animation plus an `animationend`
-    listener that adds `hidden` back. This was a deliberate rewrite
-    after the previous pause-based design (`gameRunning = false` for
-    ~1.4s behind a full-screen overlay, resumed from a `setTimeout`)
-    could get its state clobbered by a hazard/timer check landing in
-    the same frame, leaving a dark overlay stuck on screen — the
-    fix was to remove the shared timing state entirely rather than
-    patch the race. If you touch this again, keep it non-blocking;
-    don't reintroduce a `gameRunning` pause tied to a JS timer for a
-    purely cosmetic celebration.
-  - `#gameOverOverlay` — `.monkey-mean` (angled brows, frown, red
-    cheek flush, whole-body shake, small anger-mark emoji), shown by
+- **Player gorilla scenes** (splash, intro, game over): all three are
+  built the same way — a small square `<canvas>` inside a "card" overlay,
+  drawn with `drawPlushGorilla()` so the sprite always matches the one
+  in-game. `makeScene(canvasId, overlayId, drawFn)` builds the per-frame
+  draw function the main `loop()` calls for each; it's a no-op while its
+  overlay has class `hidden` (no separate rAF), and re-measures the
+  canvas after a resize (or the first time the overlay becomes visible).
+  - **Splash screen** (`#startOverlay.splash`): a title card
+    (`.splash-card`) with a kicker line, a two-tone "Banana / Dodge"
+    title, a spotlight stage holding `<canvas id="splashDancer">`, the
+    tagline, best score / highest level stat tiles, a big Play button,
+    and a controls hint (keyboard version, or a touch version via
+    `@media (hover: none) and (pointer: coarse)`). The dancer is drawn
+    by `drawDancer()`: one `DANCE_PERIOD` (4.2s) loop — bounce-and-sway
+    groove, chest-beat, hop-spin. The splash card fades in with a CSS
+    animation, so a static renderer (e.g. Quick Look) shows it
+    invisible; disable the animation to inspect the layout.
+  - **Intro screen** (`#introOverlay`): "Let's go bananas!" with the
+    same `drawDancer()` scene (`<canvas id="introDancer">`), shown via
+    `showIntro(callback)` for `INTRO_MS` (6.1s) before both `startBtn`
+    and `restartBtn` hand off to `newRun()`. Gameplay is paused (not
+    yet started) while this shows.
+  - **Game-over screen** (`#gameOverOverlay.gameover`): a card in the
+    same visual language as the splash card (`.gameover-card`), tinted
+    rose/red instead of jungle green-and-gold — a "Game Over" kicker, a
+    stage holding `<canvas id="gameOverDancer">` with two orbiting 💫
+    `.dizzy-star` spans, the new-high-score message, the final
+    score/level line, best score / highest level stat tiles, and a
+    Play Again button styled like the splash's Play button (scoped as
+    `.gameover-card .gameover-play` — a bare `.gameover-play` rule loses
+    to the generic `.overlay button` on specificity, same trap as
+    `.splash-card .splash-play`). The dancer is `drawKnockedOut()`: the
+    player tipped at the death-spin's resting angle (`DEATH_TILT`) with
+    a slow woozy sway layered on top and `dead: true` (X eyes), since
+    `drawPlushGorilla` forces hop/lift to 0 while dead. Shown by
     `gameOver()` when lives reach 0; stays up until "Play Again" is
     clicked.
-  - If you add a fifth state, copy one of the existing `<svg>` blocks
-    wholesale (same coordinates) rather than trying to share markup
-    via `<use>` — the four overlays are intentionally independent
-    copies so each can swap in its own brow/mouth/accessory paths.
+- **Level-clear toast**: the one remaining hand-built SVG monkey (inline
+  `<svg>` in `index.html`, not an emoji), with independently animated
+  limbs. The rig is a set of `<g>` groups (`.m-head`, `.m-tail`,
+  `.m-arm-left/right`, `.m-leg-left/right`, `.m-eyes`, `.m-brow-left/right`)
+  each given a `transform-origin` at its joint and animated with its own
+  CSS keyframes in `banana-dodge.css` — arms swing at the shoulder, legs
+  kick at the hip, the tail swishes at its base, eyes blink via `scaleY`.
+  `#levelClearOverlay` — `.monkey-happy` (squash-and-stretch jump, arms
+  raised in a cheer, sparkle emoji orbiting), triggered by
+  `celebrateLevelClear(clearedLevel)` when all 4 gaps are filled. Unlike
+  the other overlays, this one is **not** a blocking full-screen modal
+  (class `toast`, not `overlay`) and never touches `gameRunning` —
+  `nextLevel()` runs immediately, gameplay never pauses, and the toast is
+  a small self-dismissing badge driven entirely by the `toastPop` CSS
+  animation plus an `animationend` listener that adds `hidden` back.
+  This was a deliberate rewrite after the previous pause-based design
+  (`gameRunning = false` for ~1.4s behind a full-screen overlay, resumed
+  from a `setTimeout`) could get its state clobbered by a hazard/timer
+  check landing in the same frame, leaving a dark overlay stuck on
+  screen — the fix was to remove the shared timing state entirely
+  rather than patch the race. If you touch this again, keep it
+  non-blocking; don't reintroduce a `gameRunning` pause tied to a JS
+  timer for a purely cosmetic celebration. If you give this one a
+  canvas scene too, follow the game-over screen's example (a
+  `drawPlushGorilla()`-based scene via `makeScene()`) rather than
+  leaving it as the only mismatched sprite style across overlays.
 
 ## Known gaps / discussed but not built
 
-- No river/log-riding lane (hazards are banana and barrel lanes plus
+- No river/log-riding lane (hazards are banana and stick lanes plus
   gorilla poop).
 - No cap on level scaling or new hazard patterns at higher levels —
   it's currently pure speed escalation forever.

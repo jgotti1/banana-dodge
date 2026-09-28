@@ -11,7 +11,7 @@
   <div class="hud">
     <div>Score: <span id="score">0</span></div>
     <div>Level: <span id="level">1</span></div>
-    <div>Lives: <span id="lives">🐒🐒🐒</span></div>
+    <div>Lives: <span id="lives"></span></div>
     <button id="musicBtn" class="icon-btn" title="Toggle music">🎵</button>
   </div>
   <div class="timerbar-outer"><div id="timerbar" class="timerbar-inner"></div></div>
@@ -30,7 +30,7 @@
     <div class="splash-stage">
       <canvas id="splashDancer" role="img" aria-label="Your gorilla, dancing while it waits for you to play"></canvas>
     </div>
-    <p class="splash-tagline">Dodge flying bananas, rolling barrels, and whatever the gorillas drop. Fill all four gaps to clear the level.</p>
+    <p class="splash-tagline">Dodge flying bananas, tumbling sticks, and whatever the gorillas drop. Fill all four gaps to clear the level.</p>
     <div class="splash-stats">
       <div class="splash-stat">
         <span class="splash-stat-label">Best score</span>
@@ -47,36 +47,7 @@
   </div>
 </div>
 <div id="introOverlay" class="overlay hidden">
-  <svg class="monkey monkey-cool" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
-    <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
-    <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-    <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-    <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
-    <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
-    <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-    <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-    <g class="m-head">
-      <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
-      <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
-      <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
-      <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
-      <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
-      <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
-      <g class="m-eyes">
-        <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
-        <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
-      </g>
-      <g class="m-shades" transform="rotate(-8 100 54)">
-        <rect x="72" y="47" width="25" height="13" rx="6" fill="#111"/>
-        <rect x="103" y="47" width="25" height="13" rx="6" fill="#111"/>
-        <rect x="96" y="51" width="8" height="3" fill="#111"/>
-        <rect x="76" y="49" width="7" height="3" rx="1.5" fill="#fff" opacity="0.5"/>
-        <rect x="107" y="49" width="7" height="3" rx="1.5" fill="#fff" opacity="0.5"/>
-      </g>
-      <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
-      <path class="m-mouth" d="M88,110 Q100,102 112,110" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
-    </g>
-  </svg>
+  <div class="splash-stage"><canvas id="introDancer" aria-hidden="true"></canvas></div>
   <h1>Let's go bananas!</h1>
 </div>
 <div id="levelClearOverlay" class="toast hidden">
@@ -114,42 +85,28 @@
   </div>
   <h1 id="levelClearTitle">Level Clear!</h1>
 </div>
-<div id="gameOverOverlay" class="overlay hidden">
-  <div class="monkey-stage">
-    <svg class="monkey monkey-mean" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
-      <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
-      <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-      <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-      <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
-      <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
-      <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-      <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-      <g class="m-head">
-        <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
-        <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
-        <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
-        <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
-        <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
-        <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
-        <ellipse cx="100" cy="92" rx="30" ry="26" fill="#ff4d4d" class="m-flush" opacity="0.3"/>
-        <rect class="m-brow m-brow-left" x="76" y="70" width="16" height="5" rx="2.5" fill="#3a2410" transform="rotate(20 84 72)"/>
-        <rect class="m-brow m-brow-right" x="108" y="70" width="16" height="5" rx="2.5" fill="#3a2410" transform="rotate(-20 116 72)"/>
-        <g class="m-eyes">
-          <g class="m-eye"><circle cx="85" cy="84" r="7" fill="#fff"/><circle cx="86" cy="85" r="4" fill="#222"/></g>
-          <g class="m-eye"><circle cx="115" cy="84" r="7" fill="#fff"/><circle cx="114" cy="85" r="4" fill="#222"/></g>
-        </g>
-        <ellipse cx="100" cy="97" rx="5" ry="4" fill="#5a3a1c"/>
-        <path class="m-mouth" d="M85,114 Q100,102 115,114" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
-      </g>
-    </svg>
-    <span class="m-anger m-anger-1">💢</span>
-    <span class="m-anger m-anger-2">💢</span>
+<div id="gameOverOverlay" class="overlay gameover hidden">
+  <div class="gameover-card">
+    <p class="gameover-kicker">Game Over</p>
+    <div class="gameover-stage">
+      <span class="dizzy-star dizzy-star-1">💫</span>
+      <span class="dizzy-star dizzy-star-2">💫</span>
+      <canvas id="gameOverDancer" role="img" aria-label="Your gorilla, knocked out"></canvas>
+    </div>
+    <p id="newBestMsg" class="new-best hidden">New high score!</p>
+    <p id="finalScore" class="gameover-final"></p>
+    <div class="gameover-stats">
+      <div class="gameover-stat">
+        <span class="gameover-stat-label">Best score</span>
+        <span class="gameover-stat-value best-score">0</span>
+      </div>
+      <div class="gameover-stat">
+        <span class="gameover-stat-label">Highest level</span>
+        <span class="gameover-stat-value best-level">0</span>
+      </div>
+    </div>
+    <button id="restartBtn" class="gameover-play">Play Again</button>
   </div>
-  <h1>Game Over</h1>
-  <p id="newBestMsg" class="new-best hidden">New high score!</p>
-  <p id="finalScore"></p>
-  <p class="best-line">Best score: <span class="best-score">0</span> · Highest level: <span class="best-level">0</span></p>
-  <button id="restartBtn">Play Again</button>
 </div>
 <canvas id="confetti" aria-hidden="true"></canvas>
 <script src="banana-dodge.js" defer></script>

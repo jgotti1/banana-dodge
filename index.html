@@ -51,6 +51,7 @@
   </svg>
   <h1>Banana Dodge</h1>
   <p>Cross the jungle lanes of flying bananas and rolling barrels, then squeeze through a gap between the gorillas. Fill all four gaps to clear the level.</p>
+  <p class="best-line">Best score: <span class="best-score">0</span> · Highest level: <span class="best-level">0</span></p>
   <button id="startBtn">Start Game</button>
 </div>
 <div id="introOverlay" class="overlay hidden">
@@ -148,9 +149,12 @@
     <span class="m-anger m-anger-2">💢</span>
   </div>
   <h1>Game Over</h1>
+  <p id="newBestMsg" class="new-best hidden">New high score!</p>
   <p id="finalScore"></p>
+  <p class="best-line">Best score: <span class="best-score">0</span> · Highest level: <span class="best-level">0</span></p>
   <button id="restartBtn">Play Again</button>
 </div>
+<canvas id="confetti" aria-hidden="true"></canvas>
 <script src="banana-dodge.js" defer></script>
 </body>
 </html>

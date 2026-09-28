@@ -23,13 +23,10 @@ body {
   overflow: hidden;
 }
 .wrap {
-  /* Exact width is set by resizeCanvas() in JS, which measures the real
-     on-screen HUD/timer-bar/d-pad chrome and solves for the board size
-     that fills the viewport's height exactly (board is 7 cols x 9 rows,
-     taller than wide, so height is usually the binding constraint). This
-     is just a pre-JS fallback. */
+  /* Exact width is set inline by resizeCanvas() in JS. No max-width here:
+     it would clamp the element narrower than the canvas's internal
+     resolution and squash every sprite horizontally. */
   width: 100%;
-  max-width: 480px;
 }
 h1 {
   margin: 0 0 8px;
@@ -111,6 +108,23 @@ h1 {
   z-index: 10;
 }
 .overlay.hidden { display: none; }
+.best-line { font-size: 0.9rem; margin: 4px 0 0; }
+.best-line span { color: var(--accent); font-weight: 700; }
+.overlay .new-best {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+.new-best.hidden { display: none; }
+#confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 30;
+}
 .overlay p { max-width: 320px; color: #d8d0b8; }
 .overlay button {
   margin-top: 12px;

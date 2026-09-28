@@ -80,7 +80,10 @@
   const sfxScore = () => { beep(660, 0.08, 'triangle', 0.06); beep(880, 0.1, 'triangle', 0.06, 0.08); };
   const sfxHit = () => beep(160, 0.25, 'sawtooth', 0.07);
   const sfxLevel = () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.12, 'triangle', 0.06, i * 0.1));
-  const sfxGameOver = () => [400, 300, 200, 100].forEach((f, i) => beep(f, 0.2, 'sawtooth', 0.06, i * 0.15));
+  const sfxGameOver = () => {
+    [400, 300, 200, 150].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.07, i * 0.18));
+    beep(90, 0.6, 'sawtooth', 0.08, 4 * 0.18); // final low "womp" for a sad-trombone finish
+  };
 
   // --- audio: looping "fun monkey" background music ---
   // Bouncy marimba-style pentatonic riff with a light bongo thump, all synthesized (no audio files).
@@ -104,6 +107,11 @@
   function startMusic() {
     if (musicTimer) return;
     musicTimer = setInterval(playMusicStep, NOTE_MS);
+  }
+
+  function stopMusic() {
+    clearInterval(musicTimer);
+    musicTimer = null;
   }
 
   function toggleMusic() {
@@ -152,6 +160,7 @@
     resetMonkey();
     spawnHazards();
     gameRunning = true;
+    startMusic();
     updateHud();
   }
 
@@ -173,17 +182,17 @@
     }, 1100);
   }
 
-  function showLevelClear() {
-    gameRunning = false;
+  // Non-blocking celebration: plays a chime and pops a small self-dismissing
+  // toast (CSS-animated, cleaned up on 'animationend' below) without ever
+  // pausing gameRunning, so there's no shared timing state that could leave
+  // the screen stuck.
+  function celebrateLevelClear(clearedLevel) {
     sfxLevel();
     const overlay = document.getElementById('levelClearOverlay');
-    document.getElementById('levelClearTitle').textContent = `Level ${level} Clear!`;
-    overlay.classList.remove('hidden');
-    setTimeout(() => {
-      overlay.classList.add('hidden');
-      nextLevel();
-      gameRunning = true;
-    }, 1400);
+    document.getElementById('levelClearTitle').textContent = `Level ${clearedLevel} Clear!`;
+    overlay.classList.remove('hidden', 'toast-anim');
+    void overlay.offsetWidth; // restart the animation on repeat level-clears
+    overlay.classList.add('toast-anim');
   }
 
   function loseLife() {
@@ -200,6 +209,7 @@
 
   function gameOver() {
     gameRunning = false;
+    stopMusic();
     sfxGameOver();
     document.getElementById('finalScore').textContent = `Score: ${score} — reached level ${level}`;
     document.getElementById('gameOverOverlay').classList.remove('hidden');
@@ -237,7 +247,8 @@
         sfxScore();
         updateHud();
         if (gaps.every(g => g.filled)) {
-          showLevelClear();
+          celebrateLevelClear(level);
+          nextLevel();
         } else {
           lifeTime = LIFE_TIME_MAX;
           resetMonkey();
@@ -306,6 +317,11 @@
     ensureAudio();
     toggleMusic();
   });
+  document.getElementById('levelClearOverlay').addEventListener('animationend', (e) => {
+    if (e.animationName === 'toastPop') {
+      e.currentTarget.classList.add('hidden');
+    }
+  });
 
   // --- hud ---
   function updateHud() {
@@ -315,9 +331,31 @@
   }
 
   // --- rendering ---
+  const wrapEl = document.querySelector('.wrap');
+  const dpadEl = document.querySelector('.dpad');
+
+  // Solves for the board size that makes the whole page (HUD + timer bar +
+  // canvas + d-pad) fill the viewport's height exactly, so the game never
+  // letterboxes or scrolls. Measures the real on-screen chrome height by
+  // taking the live gap between the top of .wrap and the bottom of .dpad
+  // and subtracting the canvas's own (possibly stale) current height —
+  // what's left is everything else (HUD, timer bar, margins, d-pad),
+  // independent of the canvas's height and of which breakpoint is active.
   function resizeCanvas() {
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width;
+    const bodyStyle = getComputedStyle(document.body);
+    const paddingV = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    const paddingH = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+
+    const wrapTop = wrapEl.getBoundingClientRect().top;
+    const dpadBottom = dpadEl.getBoundingClientRect().bottom;
+    const currentCanvasHeight = canvas.getBoundingClientRect().height || 0;
+    const chromeHeight = (dpadBottom - wrapTop) - currentCanvasHeight + paddingV;
+
+    const availableHeight = Math.max(200, window.innerHeight - chromeHeight);
+    const availableWidth = Math.max(240, window.innerWidth - paddingH);
+    const width = Math.min(availableHeight * (COLS / ROWS), availableWidth);
+
+    wrapEl.style.width = `${width}px`;
     CELL = width / COLS;
     const height = CELL * ROWS;
     const dpr = window.devicePixelRatio || 1;
@@ -327,6 +365,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
 
   function draw() {
     const width = CELL * COLS;
@@ -345,6 +384,7 @@
 
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
 
     // gorillas
     ctx.font = `${CELL * 0.7}px ${EMOJI_FONT}`;
@@ -359,6 +399,9 @@
       if (g.filled) {
         ctx.fillStyle = 'rgba(255,255,255,0.15)';
         ctx.fillRect(g.col * CELL, 0, CELL, CELL);
+        // Emoji glyphs inherit fillStyle's alpha, so reset to opaque before
+        // any fillText or everything drawn after this comes out faded.
+        ctx.fillStyle = '#fff';
         ctx.fillText('🐒', cx, cy);
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';

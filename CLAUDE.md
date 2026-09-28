@@ -90,9 +90,24 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   - Audio only starts after a user gesture (`ensureAudio()`, called
     from the start/restart/music buttons and on first keypress), per
     browser autoplay rules; `startMusic()` runs once, the first time
-    `ensureAudio()` creates the `AudioContext`.
-- **Responsive canvas**: `resizeCanvas()` recomputes `CELL` from the
-  canvas's actual CSS width so the grid scales to the container.
+    `ensureAudio()` creates the `AudioContext`, and again from
+    `newRun()` on every restart. `gameOver()` calls `stopMusic()`
+    (clears the interval) so the loop cuts out under the game-over
+    "bummer" sting (`sfxGameOver()`) instead of playing under it.
+- **Responsive canvas**: `resizeCanvas()` solves for a board size that
+  fills the viewport's height exactly (no scroll, no letterboxing),
+  not just a width that fits. It measures the real on-screen gap
+  between the top of `.wrap` and the bottom of `.dpad`, subtracts the
+  canvas's own current height to isolate the HUD/timer-bar/d-pad
+  chrome height (this trick is self-correcting regardless of the
+  canvas's previous size or which CSS breakpoint is active — see the
+  comment above the function before changing it), then picks
+  `width = min(availableHeight * 7/9, availableWidth)` and sets
+  `.wrap`'s width directly, before deriving `CELL` from it. Runs on
+  load, on `resize`, and (after a short delay) on `orientationchange`.
+  The CSS breakpoints in `banana-dodge.css` only scale chrome (HUD
+  font size, d-pad button size, monkey rig size) — they don't
+  constrain `.wrap`'s width; that's entirely JS-driven now.
 - **Overlay screens**: four full-screen overlays, each centered on a
   hand-built SVG monkey (inline `<svg>` per overlay in `index.html`,
   not an emoji) with independently animated limbs. The rig is a set
@@ -111,10 +126,22 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
     `startBtn` and `restartBtn` hand off to `newRun()`. Gameplay is
     paused (not yet started) while this shows.
   - `#levelClearOverlay` — `.monkey-happy` (squash-and-stretch jump,
-    arms raised in a cheer, sparkle emoji orbiting), shown via
-    `showLevelClear()` when all 4 gaps are filled; it sets
-    `gameRunning = false` for ~1.4s, then calls `nextLevel()` and
-    resumes.
+    arms raised in a cheer, sparkle emoji orbiting), triggered by
+    `celebrateLevelClear(clearedLevel)` when all 4 gaps are filled.
+    Unlike the other three, this one is **not** a blocking full-screen
+    modal (class `toast`, not `overlay`) and never touches
+    `gameRunning` — `nextLevel()` runs immediately, gameplay never
+    pauses, and the toast is a small self-dismissing badge driven
+    entirely by the `toastPop` CSS animation plus an `animationend`
+    listener that adds `hidden` back. This was a deliberate rewrite
+    after the previous pause-based design (`gameRunning = false` for
+    ~1.4s behind a full-screen overlay, resumed from a `setTimeout`)
+    could get its state clobbered by a hazard/timer check landing in
+    the same frame, leaving a dark overlay stuck on screen — the
+    fix was to remove the shared timing state entirely rather than
+    patch the race. If you touch this again, keep it non-blocking;
+    don't reintroduce a `gameRunning` pause tied to a JS timer for a
+    purely cosmetic celebration.
   - `#gameOverOverlay` — `.monkey-mean` (angled brows, frown, red
     cheek flush, whole-body shake, small anger-mark emoji), shown by
     `gameOver()` when lives reach 0; stays up until "Play Again" is

@@ -8,7 +8,7 @@
 * { box-sizing: border-box; }
 html, body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
   background: radial-gradient(circle at top, var(--bg-mid), var(--bg-dark));
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -17,15 +17,19 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   padding: 16px;
   position: relative;
+  overflow: hidden;
 }
 .wrap {
+  /* Exact width is set by resizeCanvas() in JS, which measures the real
+     on-screen HUD/timer-bar/d-pad chrome and solves for the board size
+     that fills the viewport's height exactly (board is 7 cols x 9 rows,
+     taller than wide, so height is usually the binding constraint). This
+     is just a pre-JS fallback. */
   width: 100%;
-  /* Board is 7 cols x 9 rows (taller than wide), so cap width by both a
-     px ceiling and by available viewport height, or a big/short screen
-     would force the canvas to overflow past the fold. */
-  max-width: min(480px, calc(78vh * 7 / 9));
+  max-width: 480px;
 }
 h1 {
   margin: 0 0 8px;
@@ -126,6 +130,40 @@ h1 {
 }
 .monkey { display: block; overflow: visible; }
 
+/* Level-clear is a non-blocking toast, not a full-screen modal: gameplay
+   never pauses for it, and it always self-dismisses via the CSS animation
+   below (plus an animationend listener), so there's no shared state with
+   the game loop that could ever leave it stuck on screen. */
+.toast {
+  position: fixed;
+  top: 6%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  background: rgba(20, 50, 26, 0.95);
+  border: 2px solid rgba(245, 197, 66, 0.6);
+  border-radius: 18px;
+  padding: 10px 28px 18px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+}
+.toast.hidden { display: none; }
+.toast h1 { margin: 4px 0 0; font-size: 1.3rem; }
+#levelClearOverlay.toast .monkey { width: 110px; height: 121px; }
+.toast.toast-anim { animation: toastPop 1.3s ease forwards; }
+
+@keyframes toastPop {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-12px) scale(0.9); }
+  12% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  82% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
+}
+
 /* --- idle (splash screen) --- */
 .monkey-idle { animation: idleBob 2.4s ease-in-out infinite; }
 .monkey-idle .m-head { animation: idleSway 2.4s ease-in-out infinite; transform-origin: 100px 120px; }
@@ -224,10 +262,10 @@ h1 {
   100% { opacity: 0; transform: translateY(-26px) scale(1.3); }
 }
 
-/* --- scale up on tablets (iPad) and desktop; the vh term in .wrap's
-   max-width still caps things on short/landscape viewports --- */
+/* --- scale up chrome (text, buttons, monkey rig) on tablets (iPad) and
+   desktop; .wrap's actual px width is computed by resizeCanvas() in JS,
+   not by a max-width here --- */
 @media (min-width: 640px) {
-  .wrap { max-width: min(640px, calc(80vh * 7 / 9)); }
   h1 { font-size: 1.7rem; }
   .hud { font-size: 1.1rem; }
   .dpad {
@@ -241,7 +279,6 @@ h1 {
 }
 
 @media (min-width: 1024px) {
-  .wrap { max-width: min(820px, calc(82vh * 7 / 9)); }
   body { padding: 32px; }
   h1 { font-size: 2rem; }
   .hud { font-size: 1.25rem; }

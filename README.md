@@ -9,9 +9,9 @@ the level; each new level has about 15% more hazards moving 10% faster.
 
 The characters are drawn in the style of Gorilla Tag plush toys: you're a
 brown gorilla, the three gorillas guarding the top wear top hats, and a
-bigger party-hat boss walks the branch above them. The lanes sit over a
-jungle photo background, and bananas are a cartoon sprite rather than an
-emoji, each tumbling by at its own random angle.
+bigger party-hat boss walks the branch above them. The lanes sit over
+rotating jungle, autumn, and snowy canyon backgrounds, and bananas are a
+cartoon sprite rather than an emoji, each tumbling by at its own random angle.
 
 Works on phones, iPads, and desktop. The board stretches to fill the screen
 without distorting anything.
@@ -72,7 +72,7 @@ vercel --prod
   SVG monkey keyframes.
 - `banana-dodge.js`: game logic, Canvas 2D rendering, and synthesized
   WebAudio sound effects and music.
-- `assets/`: the jungle background photo and the banana sprite.
+- `assets/`: the three rotating level backgrounds and the banana sprite.
 
 Built with plain HTML, CSS, and JavaScript. No frameworks.
 

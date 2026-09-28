@@ -154,8 +154,8 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   reference is a plush; the hat is clipped rainbow stripes
   (`drawPartyHat()`). Reset with the other gorillas in `spawnHazards()`.
 - **Canvas layout**: the canvas is `ROWS + BOSS_BAND_ROWS` row-heights
-  tall (see `resizeCanvas()`). `draw()` paints the jungle background photo
-  (see Background photo below), then the band (`drawBossBand()`), then
+  tall (see `resizeCanvas()`). `draw()` paints the selected level background
+  (see Background rotation below), then the band (`drawBossBand()`), then
   `translate`s down by the band height so everything else keeps the
   original grid coordinates with row 0 at y = 0; the boss and his poop
   simply draw at negative y. Grid logic (movement, collisions, hazard
@@ -163,7 +163,7 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - **Banana sprite**: `drawBanana()` draws the cartoon banana image
   (`assets/banana.png`, an owner-supplied reference with its white
   background flood-filled to transparent) instead of the 🍌 emoji.
-  Loads once (`bananaImage`/`bananaLoaded`, same pattern as `bgImage`);
+  Loads once (`bananaImage`/`bananaLoaded`);
   `draw()` skips it until loaded. Drawn at `h.radius * 2 *
   BANANA_DRAW_SCALE * SPRITE` wide (1.3×, aspect-correct height from the
   image) — visual only, `h.radius` itself is untouched so `hazardHit()`'s
@@ -174,14 +174,17 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   it's fixed for that hazard's lifetime, not re-rolled per frame or on
   wrap. Also mirrored (`g.scale(-1, 1)`) when `h.dir < 0` so it still
   reads as flying the way it's actually moving.
-- **Background photo**: `bgImage` (`assets/bg-jungle.jpg`, an
-  owner-supplied reference of a Gorilla Tag-style forest) loads once at
-  startup; `draw()` skips it until `bgLoaded` flips true, leaving the
-  plain `#game` CSS background for the first frame or two. It's drawn
+- **Background rotation**: `BACKGROUND_SOURCES` preloads three environment
+  images: the original jungle (`assets/bg-jungle.jpg`), autumn canyon
+  (`assets/bg-jungle-level-2.jpg`), and snowy canyon
+  (`assets/bg-jungle-level-3.jpg`). `backgroundForLevel()` selects them with
+  `(level - 1) % 3`, so levels 1/4/7 use the original, 2/5/8 use autumn,
+  and 3/6/9 use snow. `drawBoard()` leaves the plain `#game` CSS background
+  visible until the selected image has loaded. The selected image is drawn
   by `drawImageCover()` across the whole canvas (band + grid) before
-  anything else, scaled to cover and cropped rather than stretched, so
-  the photo doesn't distort the way lane colors are allowed to stretch.
-  The source screenshot's bottom-left camera overlay has been removed.
+  anything else, scaled to cover and cropped rather than stretched, so the
+  background doesn't distort the way lane colors are allowed to stretch.
+  The original source screenshot's bottom-left camera overlay has been removed.
   `drawBossBand()` no longer paints its own flat gradient — just the
   branch and leaf clusters on top of the photo. `LANE_COLORS` are
   translucent (`rgba(...)`) rather than opaque, and lighter than the raw

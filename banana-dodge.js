@@ -83,7 +83,7 @@
   ];
 
   // Lane rows are tinted, translucent overlays (not opaque fills) so the
-  // jungle background photo (see bgImage below) shows through underneath;
+  // selected level background (see BACKGROUND_SOURCES below) shows through;
   // the alpha per type is what keeps banana/stick lanes readable against
   // whatever the photo is doing in that stripe.
   const LANE_COLORS = {
@@ -94,15 +94,25 @@
     stick: 'rgba(158, 146, 92, 0.68)', // lighter dirt so the brown sticks stand out
   };
 
-  // Jungle background photo (owner-supplied reference), drawn cover-fit
-  // behind the boss band and the lane grid. Loads once; draw() just no-ops
-  // the drawImage call until it's ready, leaving the plain canvas
-  // background (dark, from CSS `#game { background: var(--panel) }`)
-  // showing for that first frame or two.
-  const bgImage = new Image();
-  let bgLoaded = false;
-  bgImage.onload = () => { bgLoaded = true; };
-  bgImage.src = 'assets/bg-jungle.jpg';
+  // Level backgrounds rotate every three levels: original jungle, autumn
+  // canyon, snowy canyon, then back to the original. All three preload at
+  // startup; drawBoard() falls back to the canvas's panel color until the
+  // selected image is ready.
+  const BACKGROUND_SOURCES = [
+    'assets/bg-jungle.jpg',
+    'assets/bg-jungle-level-2.jpg',
+    'assets/bg-jungle-level-3.jpg',
+  ];
+  const bgImages = BACKGROUND_SOURCES.map(src => {
+    const image = new Image();
+    image.src = src;
+    return image;
+  });
+
+  function backgroundForLevel(levelNumber) {
+    const safeLevel = Number.isInteger(levelNumber) && levelNumber > 0 ? levelNumber : 1;
+    return bgImages[(safeLevel - 1) % bgImages.length];
+  }
 
   // Draws `img` into (x, y, w, h) scaled to cover the whole box (cropping
   // whichever axis overhangs) rather than stretched, so the photo doesn't
@@ -1453,7 +1463,7 @@
   }
 
   // The branch the boss walks on, in the band above the goal row. The band's
-  // own background is the jungle photo (drawn by draw() before this runs);
+  // own background is the selected level image (drawn before this runs);
   // this just adds the branch and leaf clusters on top of it.
   function drawBossBand(width, bandH) {
     const branchY = bandH - 0.1 * CELL_H;
@@ -1483,7 +1493,10 @@
   // scene instead — see drawLevelClearParade().
   function drawBoard(width, bandH, totalH) {
     ctx.clearRect(0, 0, width, totalH);
-    if (bgLoaded) drawImageCover(ctx, bgImage, 0, 0, width, totalH);
+    const bgImage = backgroundForLevel(level);
+    if (bgImage.complete && bgImage.naturalWidth > 0) {
+      drawImageCover(ctx, bgImage, 0, 0, width, totalH);
+    }
     drawBossBand(width, bandH);
 
     // Everything below is in grid space: row 0 starts at y = 0, and the

@@ -74,11 +74,27 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   (`GAP_COLS`); landing on an unfilled gap scores 50 and marks it
   filled (an already-filled gap also blocks movement, same as a
   gorilla). Filling all 4 gaps clears the level.
-- **Movement**: `tryMove(dir)` handles one grid-cell hop, with a
-  short animation tween (`monkey.animT` over `ANIM_DURATION`) and a
-  `moveLock` to block input spam mid-hop. `finishMove()` commits the
-  new grid position once the tween completes and handles gap-arrival
-  logic.
+- **Movement**: `tryMove(dir)` handles one step, with a short animation
+  tween (`monkey.animT` over `monkey.animDuration`) and a `moveLock` to
+  block input spam mid-step. `finishMove()` commits the new position once
+  the tween completes and handles gap-arrival logic.
+  - Up/down are discrete one-row hops (with the hop bounce).
+  - Left/right move one **sprite width**, `min(1, SPRITE / CELL_W)`
+    columns, and slide flat (no bounce). Columns stretch up to
+    `MAX_CELL_W_RATIO` × `SPRITE` on wide boards, and a full-column step
+    there was a big jump; the owner asked for smooth sideways movement.
+    So `monkey.col` can be fractional while in the lanes (collision already
+    works in continuous pixels). It's clamped to `[0, COLS - 1]` and
+    snapped to a whole column when within 1e-6, so repeated steps don't
+    drift.
+  - Hopping into the goal row snaps `col` to `Math.round(col)` before the
+    gorilla/filled-gap checks, so gaps and the parked monkeys stay on exact
+    columns.
+  - `monkey.animDuration` is `ANIM_DURATION` (120ms per `SPRITE` of
+    travel) scaled by the pixels the step actually covers, so on-screen
+    speed is constant however `CELL_W`/`CELL_H` are stretched. That's the
+    same idea as hazard speed in sprite widths/sec; don't go back to a flat
+    per-step duration.
 - **Hazards**: the `hazards` array holds live objects with `x`
   position (in column units, not pixels), `speed`, `dir`, updated
   each frame in `updateHazards()`, wrapping around at the grid edges.
@@ -180,11 +196,12 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   gaps and monkey position, keeps score/lives, and multiplies hazard
   speed by `speedMul()` (currently `1 + (level-1)*0.22`, compounding
   each level — no cap, no new hazard patterns yet). Hazard *counts* are
-  otherwise fixed across levels, except one lane: row 5's banana lane
-  (the first banana lane the player reaches leaving the start row) has a
-  `level1Count` on its `laneDefs` entry that `spawnHazards()` uses
-  instead of `count` while `level === 1`, easing that first crossing;
-  level 2 on uses the normal count.
+  otherwise fixed across levels, except both banana lanes, which have a
+  `level1Count` on their `laneDefs` entry that `spawnHazards()` uses
+  instead of `count` while `level === 1` (currently 2 on each lane, down
+  from 3 and 4) to ease the first level; level 2 on uses the normal
+  count. This was tuned twice — trimming just the first banana lane by
+  one still wasn't enough, so both lanes now drop to 2.
 - **Controls**: arrow keys / WASD (`keyMap`), plus an on-screen
   touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`. Enter
   or Space clicks Play (splash) or Play Again (game over) when that
@@ -375,8 +392,9 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   `banana-dodge.css` (styling), and `banana-dodge.js` (all game logic).
   Keep new code in the matching file rather than reintroducing inline
   `<style>`/`<script>` blocks.
-- Preserve the grid-based movement model (discrete cell hops, not
-  free movement) — it's core to the Frogger feel.
+- Preserve the step-based movement model (discrete steps, not free
+  movement): one row per up/down hop, one sprite width per left/right
+  step. It's core to the Frogger feel.
 - Layout or screen-size changes must not change gameplay feel (hazard
   speed on screen, spacing, timing). The owner has pushed back on this
   explicitly; check speeds in `SPRITE` terms after any resize change.

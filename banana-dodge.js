@@ -41,14 +41,15 @@
   const laneDefs = [
     { type: 'goal' },
     { type: 'safe' },
-    { type: 'banana', dir: 1, baseSpeed: 1.4, count: 3, radius: 0.22 },
+    // level1Count on both banana lanes eases level 1 (it was still too
+    // hard with just the first lane trimmed by one); level 2 on uses the
+    // normal count, see spawnHazards().
+    { type: 'banana', dir: 1, baseSpeed: 1.4, count: 3, level1Count: 2, radius: 0.22 },
     { type: 'stick', dir: -1, baseSpeed: 1.1, count: 2, radius: 0.34 },
     { type: 'safe' },
     // Row 5 is the first banana lane the player reaches leaving the start
-    // row (row 8, moving up through the row-6 stick lane); level1Count
-    // eases that first crossing before the normal count kicks in from
-    // level 2 on, see spawnHazards().
-    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 4, level1Count: 3, radius: 0.22 },
+    // row (row 8, moving up through the row-6 stick lane).
+    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 4, level1Count: 2, radius: 0.22 },
     { type: 'stick', dir: 1, baseSpeed: 1.3, count: 2, radius: 0.34 },
     { type: 'safe' },
     { type: 'start' },
@@ -595,6 +596,7 @@
       animFrom: { col: 3, row: ROWS - 1 },
       animTo: { col: 3, row: ROWS - 1 },
       animT: 1,
+      animDuration: ANIM_DURATION,
       dead: false,
     };
     moveLock = false;
@@ -687,10 +689,23 @@
     if (!gameRunning || moveLock || monkey.dead) return;
     const d = DIRS[dirName];
     if (!d) return;
-    const nc = monkey.col + d.dc;
+    // Rows stay discrete hops, but a left/right step is one sprite width,
+    // not one column: columns stretch up to MAX_CELL_W_RATIO × SPRITE on
+    // wide boards, and a full-column step there was a big jump. So
+    // monkey.col can be fractional in the lanes; it snaps to the nearest
+    // whole column when hopping into the goal row, where gaps and gorillas
+    // sit on exact columns.
+    let nc = monkey.col;
+    if (d.dc) {
+      const step = Math.min(1, SPRITE / CELL_W);
+      nc = Math.min(COLS - 1, Math.max(0, monkey.col + d.dc * step));
+      if (Math.abs(nc - Math.round(nc)) < 1e-6) nc = Math.round(nc); // no float drift
+      if (nc === monkey.col) return;
+    }
     const nr = monkey.row + d.dr;
-    if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) return;
+    if (nr < 0 || nr >= ROWS) return;
     if (nr === 0) {
+      nc = Math.round(nc);
       if (GORILLA_COLS.includes(nc)) return;
       const gap = gaps.find(g => g.col === nc);
       if (gap && gap.filled) return;
@@ -699,6 +714,10 @@
     monkey.animFrom = { col: monkey.col, row: monkey.row };
     monkey.animTo = { col: nc, row: nr };
     monkey.animT = 0;
+    // Scale the tween by the pixels actually covered (in SPRITE widths) so
+    // on-screen speed is constant however CELL_W/CELL_H are stretched.
+    const hopPx = Math.hypot((nc - monkey.col) * CELL_W, (nr - monkey.row) * CELL_H);
+    monkey.animDuration = ANIM_DURATION * Math.max(1, hopPx / SPRITE);
     sfxHop();
   }
 
@@ -1358,7 +1377,8 @@
     // monkey
     const pos = currentMonkeyPos();
     drawPlushGorilla(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H + PLUSH_CENTER_Y * playerSize(), playerSize(), PLAYER_COLORS, {
-      hop: monkey.animT,
+      // sideways steps slide flat; only row changes bounce
+      hop: monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1,
       dead: monkey.dead,
       angle: monkey.dead ? deathSpinAngle() : 0,
     });
@@ -1449,7 +1469,7 @@
         if (deathTimer <= 0) finishDeath();
       } else {
         if (moveLock) {
-          monkey.animT += (dt * 1000) / ANIM_DURATION;
+          monkey.animT += (dt * 1000) / monkey.animDuration;
           if (monkey.animT >= 1) {
             monkey.animT = 1;
             finishMove();

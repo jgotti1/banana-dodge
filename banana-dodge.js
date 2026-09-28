@@ -56,11 +56,11 @@
   // stuck overlay on screen (see the level-clear toast note) when a
   // hazard/timer check landed in the same frame.
   const LEVEL_SCENE_FADE_TIME = 0.6; // seconds to fade the board out, and back in after
-  const LEVEL_SCENE_RUN_SPEED = 2; // sprite widths per second — slow and deliberate, not a blink-and-miss dash
+  const LEVEL_SCENE_RUN_SPEED = 2.2; // sprite widths per second — slow and deliberate, not a blink-and-miss dash
   const LEVEL_SCENE_GORILLA_GAP = 0.45; // seconds between each gorilla's start
   const LEVEL_SCENE_BOSS_HEAD_START = 0.6; // seconds the boss runs before the first gorilla starts
   const LEVEL_SCENE_PLAYER_GAP = 0.7; // seconds after the last gorilla starts before the player follows
-  const LEVEL_SCENE_BOUNCE_RATE = 2; // bounces per second while running
+  const LEVEL_SCENE_BOUNCE_RATE = 2.2; // bounces per second while running
   const LEVEL_SCENE_BG = '20, 50, 26'; // rgb triplet matching #game's own --panel jungle green (CSS), not black
 
   const EMOJI_FONT = 'Apple Color Emoji, "Segoe UI Emoji", "Noto Color Emoji", sans-serif';

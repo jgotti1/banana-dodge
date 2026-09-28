@@ -424,9 +424,12 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
     *separate* coordinate space from the grid: actor `x` is sprite
     widths from the canvas's left edge (not columns), running from just
     off-screen left to just off-screen right (`LEVEL_SCENE_RUN_SPEED`,
-    deliberately slow so it actually reads); nothing needs explicit
-    hiding before/after, since off-canvas x values simply don't render.
-    `sceneRunBounce()` adds a running bounce once an actor is under way.
+    deliberately slow so it actually reads — nudged up 10% from the
+    original pass once it played, still nowhere near the old in-grid
+    dash); nothing needs explicit hiding before/after, since off-canvas x
+    values simply don't render. `sceneRunBounce()` (`LEVEL_SCENE_BOUNCE_RATE`,
+    bumped the same 10% to keep the stride matching the run speed) adds a
+    running bounce once an actor is under way.
     Once every actor's `done` is true, `nextLevel()` runs immediately
     (resetting gaps/monkey/gorillas/boss/hazards for the new level)
     *before* switching to `'fadeIn'`, so fading in reveals the new level

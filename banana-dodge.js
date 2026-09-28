@@ -18,6 +18,7 @@
   const POOP_FALL_SPEED = 2.6; // rows per second at level 1
   const POOP_LAND_Y = ROWS - 1.5; // row-center coords: top edge of start row
   const GORILLA_SHAKE_TIME = 0.7; // seconds of warning before the drop
+  const PARKED_CHEER_TIME = 1.05; // seconds parked players clap for a new arrival
   const DROP_INTERVAL_MIN = 2.5;
   const DROP_INTERVAL_MAX = 6;
   const DEATH_PAUSE = 0.9; // seconds the X-eyed player stays on screen after a hit
@@ -142,7 +143,7 @@
   let gorillaShake = {}; // gorilla col -> seconds of shaking left
   let boss = { x: 3, dir: 1, windup: 0, reload: 0, nextThrowIn: 4 };
   let nextDropIn = 0;
-  const gaps = GAP_COLS.map(col => ({ col, filled: false }));
+  const gaps = GAP_COLS.map(col => ({ col, filled: false, cheer: 0 }));
   let monkey, moveLock, level, score, lives, lifeTime, gameRunning;
   let deathTimer = 0;
   let lastTime = 0;
@@ -296,6 +297,17 @@
   };
   const sfxOohOoh = (delay = 0) =>
     [0, 0.15].forEach(d => apeVoice(320, 480, 0.12, { vowel: 'oo', gain: 0.12, delay: delay + d }));
+  // Each player already parked at the top gives the new arrival a quick
+  // chimp call and two audible claps. Staggering them keeps a group from
+  // collapsing into one overly loud sound.
+  const sfxParkedPlayerCheer = count => {
+    for (let i = 0; i < count; i++) {
+      const delay = 0.12 + i * 0.1;
+      apeVoice(390 + i * 35, 570 + i * 25, 0.18, { vowel: 'oo', gain: 0.09, delay, wobble: 0.05 });
+      noiseBurst(0.045, { freq: 1800, q: 0.8, gain: 0.045, delay: delay + 0.22 });
+      noiseBurst(0.045, { freq: 1900, q: 0.8, gain: 0.045, delay: delay + 0.43 });
+    }
+  };
   // Losing a life: a thud, a cartoon falling slide, and a sad descending
   // ape whimper. Deliberately unlike the hop/score beeps so it's unmistakable.
   const sfxLifeLost = () => {
@@ -391,18 +403,15 @@
     document.querySelectorAll('.best-level').forEach(el => { el.textContent = best.level; });
   }
 
-  // Confetti only fires when a previous record existed to beat, and only
-  // once per run (the first moment the score passes it).
+  // Progress is saved as it happens, but celebration waits for gameOver().
+  // A score of zero is still treated as "no previous record", matching the
+  // original behavior for somebody's first-ever game.
   function recordProgress() {
     let changed = false;
     if (score > best.score) {
       best.score = score;
       changed = true;
-      if (!beatBestThisRun && bestScoreAtRunStart > 0) {
-        beatBestThisRun = true;
-        sfxHighScore();
-        launchConfetti();
-      }
+      if (bestScoreAtRunStart > 0) beatBestThisRun = true;
     }
     if (level > best.level) {
       best.level = level;
@@ -607,7 +616,7 @@
     level = 1;
     score = 0;
     lives = 3;
-    gaps.forEach(g => { g.filled = false; });
+    gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
     spawnHazards();
@@ -621,7 +630,7 @@
 
   function nextLevel() {
     level++;
-    gaps.forEach(g => { g.filled = false; });
+    gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
     spawnHazards();
@@ -678,7 +687,12 @@
   function gameOver() {
     gameRunning = false;
     stopMusic();
-    sfxGameOver();
+    if (beatBestThisRun) {
+      sfxHighScore();
+      launchConfetti();
+    } else {
+      sfxGameOver();
+    }
     document.getElementById('finalScore').textContent = `Score: ${score} — reached level ${level}`;
     document.getElementById('newBestMsg').classList.toggle('hidden', !beatBestThisRun);
     document.getElementById('gameOverOverlay').classList.remove('hidden');
@@ -728,10 +742,13 @@
     if (monkey.row === 0) {
       const gap = gaps.find(g => g.col === monkey.col);
       if (gap && !gap.filled) {
+        const parkedPlayers = gaps.filter(other => other.filled);
         gap.filled = true;
+        parkedPlayers.forEach(other => { other.cheer = PARKED_CHEER_TIME; });
         score += 50;
         sfxScore();
         sfxOohOoh(0.2);
+        if (parkedPlayers.length) sfxParkedPlayerCheer(parkedPlayers.length);
         updateHud();
         recordProgress();
         if (gaps.every(g => g.filled)) {
@@ -1089,6 +1106,8 @@
   // body spans about y -0.53 (head) to 0.46 (hands). Options:
   //   beat  seconds into a chest-beat, or -1. The fists alternate onto the
   //         chest, the mouth opens, and the hat bounces.
+  //   clap  seconds into a cheer, or -1. Both hands repeatedly meet in
+  //         front of the chest (used by parked players welcoming an arrival).
   //   hop   0..1 jump progress: lifts the body and tucks the hands up
   //         mid-hop (1 = sitting).
   //   dead  X eyes and an "o" mouth (player after a hit).
@@ -1120,8 +1139,9 @@
   // Shift (in sprite units) that centers the plush's head-to-hands span on a point.
   const PLUSH_CENTER_Y = 0.035;
 
-  function drawPlushGorilla(g, cx, cy, size, c, { beat = -1, hop = 1, dead = false, angle = 0, hat = false } = {}) {
+  function drawPlushGorilla(g, cx, cy, size, c, { beat = -1, clap = -1, hop = 1, dead = false, angle = 0, hat = false } = {}) {
     const beating = beat >= 0;
+    const clapping = clap >= 0;
     const lift = dead ? 0 : Math.sin(hop * Math.PI);
     const bob = beating ? Math.abs(Math.sin(beat * Math.PI * 2 * CHEST_BEATS_PER_SEC)) * 0.03 : 0;
     g.save();
@@ -1136,10 +1156,13 @@
     ellipseFill(g, -0.08, 0.07, 0.1, 0.12, c.furLight);
     ellipseFill(g, 0, 0.16, 0.11, 0.14, c.face);
 
-    // arms: resting down in front with hands on the ground, or chest-beating
+    // arms: resting down, clapping together, or chest-beating
     for (const sx of [-1, 1]) {
       let hand;
-      if (beating) {
+      if (clapping) {
+        const v = 0.5 - 0.5 * Math.cos(clap * Math.PI * 2 * 4);
+        hand = [sx * lerp(0.22, 0.035, v), lerp(0.3, 0.12, v)];
+      } else if (beating) {
         const phase = beat * Math.PI * 2 * CHEST_BEATS_PER_SEC + (sx < 0 ? 0 : Math.PI);
         const v = 0.5 + 0.5 * Math.sin(phase); // 1 = fist on the chest
         hand = [sx * lerp(0.34, 0.08, v), lerp(-0.1, 0.12, v)];
@@ -1195,7 +1218,7 @@
     for (const sx of [-1, 1]) ellipseFill(g, sx * 0.022, -0.165, 0.013, 0.009, c.ink);
     if (dead) {
       ellipseFill(g, 0, -0.12, 0.022, 0.022, c.ink);
-    } else if (beating) {
+    } else if (beating || clapping) {
       ellipseFill(g, 0, -0.12, 0.045, 0.028, c.ink);
     } else {
       g.beginPath();
@@ -1329,7 +1352,8 @@
         // any fillText or everything drawn after this comes out faded.
         ctx.fillStyle = '#fff';
         const size = playerSize() * 0.9;
-        drawPlushGorilla(ctx, cx, cy + PLUSH_CENTER_Y * size, size, PLAYER_COLORS);
+        const clap = g.cheer > 0 ? PARKED_CHEER_TIME - g.cheer : -1;
+        drawPlushGorilla(ctx, cx, cy + PLUSH_CENTER_Y * size, size, PLAYER_COLORS, { clap });
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2;
@@ -1463,6 +1487,7 @@
 
     if (gameRunning) {
       updateHazards(dt);
+      gaps.forEach(g => { g.cheer = Math.max(0, g.cheer - dt); });
 
       if (deathTimer > 0) {
         deathTimer -= dt;

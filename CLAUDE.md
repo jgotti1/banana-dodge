@@ -305,14 +305,19 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   `newRun()`, `nextLevel()`, and right after scoring in `finishMove()`.
   Values show on the splash and game-over screens (`.best-score` /
   `.best-level` spans, filled by `updateBestDisplay()`).
-- **High-score confetti**: the first time in a run that the score
-  passes the best score that existed at run start,
-  `recordProgress()` plays `sfxHighScore()` and `launchConfetti()`
-  (particles on the fixed, click-through `#confetti` canvas with its
-  own rAF loop that stops when the last piece falls off-screen), and
-  the game-over screen shows "New high score!". It deliberately does
+- **High-score confetti**: `recordProgress()` notes when the score passes
+  the best score that existed at run start, but does not interrupt play.
+  At the end of that run, `gameOver()` plays `sfxHighScore()` and calls
+  `launchConfetti()` (particles on the fixed, click-through `#confetti`
+  canvas with its own rAF loop that stops when the last piece falls
+  off-screen), and the screen shows "You beat your high score!". It does
   **not** fire when there was no previous record (best of 0), so a
   first-ever game doesn't get confetti for its first 50 points.
+- **Parked-player cheers**: after a player lands in an open goal gap, every
+  player that was already parked gets `PARKED_CHEER_TIME` seconds of the
+  `clap` pose in `drawPlushGorilla()` while `sfxParkedPlayerCheer()` gives
+  each one a staggered chimp call and two hand-clap sounds. The newly
+  parked player is excluded from this welcome cheer.
 - **Player gorilla scenes** (splash, intro, game over): all three are
   built the same way — a small square `<canvas>` inside a "card" overlay,
   drawn with `drawPlushGorilla()` so the sprite always matches the one

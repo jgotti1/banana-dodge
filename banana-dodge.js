@@ -43,6 +43,20 @@
   const BOSS_THROW_MAX = 7;
   const BOSS_HAND_UP = [-0.3, -0.62]; // raised throwing hand, in boss unit space
 
+  // Level-clear cutscene: a Pac-Man-style "parade" off the right edge —
+  // boss first, then the three top-hat gorillas chasing him in a staggered
+  // line, then the player carrying a "next level" sign. Driven entirely
+  // from inside loop() (see updateLevelClearScene()), the same pattern as
+  // deathTimer/DEATH_PAUSE, never a gameRunning+setTimeout pause — that
+  // combo previously left a stuck overlay on screen (see the level-clear
+  // toast note) when a hazard/timer check landed in the same frame.
+  const LEVEL_SCENE_RUN_SPEED = 4.5; // sprite widths per second
+  const LEVEL_SCENE_GORILLA_GAP = 0.3; // seconds between each gorilla's start
+  const LEVEL_SCENE_BOSS_HEAD_START = 0.5; // seconds the boss runs before the first gorilla starts
+  const LEVEL_SCENE_PLAYER_GAP = 0.6; // seconds after the last gorilla starts before the player follows
+  const LEVEL_SCENE_EXIT_X = COLS + 1.5; // off-canvas to the right; an actor past this is done
+  const LEVEL_SCENE_BOUNCE_RATE = 3; // bounces per second while running
+
   const EMOJI_FONT = 'Apple Color Emoji, "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
   // Row 0 = goal (top), row 8 = start (bottom).
@@ -157,6 +171,8 @@
   let monkey, moveLock, level, score, lives, lifeTime, gameRunning;
   let deathTimer = 0;
   let lastTime = 0;
+  // null when no cutscene is playing; see startLevelClearScene().
+  let levelClearScene = null;
 
   // --- audio: sound effects ---
   let audioCtx = null;
@@ -187,6 +203,7 @@
   const sfxPlop = () => { beep(420, 0.06, 'sine', 0.06); beep(210, 0.12, 'sine', 0.06, 0.05); };
   const sfxHighScore = () => [784, 988, 1175, 1568, 1976].forEach((f, i) => beep(f, 0.14, 'triangle', 0.06, i * 0.08));
   const sfxLevel = () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.12, 'triangle', 0.06, i * 0.1));
+  const sfxExtraLife = () => [660, 880, 1108].forEach((f, i) => beep(f, 0.1, 'square', 0.05, i * 0.07));
   const sfxGameOver = () => {
     [400, 300, 200, 150].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.07, i * 0.18));
     beep(90, 0.6, 'sawtooth', 0.08, 4 * 0.18); // final low "womp" for a sad-trombone finish
@@ -653,6 +670,8 @@
 
   function nextLevel() {
     level++;
+    lives++;
+    sfxExtraLife();
     gaps.forEach(g => { g.filled = false; g.cheer = 0; });
     lifeTime = LIFE_TIME_MAX;
     resetMonkey();
@@ -683,6 +702,68 @@
     overlay.classList.remove('hidden', 'toast-anim');
     void overlay.offsetWidth; // restart the animation on repeat level-clears
     overlay.classList.add('toast-anim');
+  }
+
+  // Kicks off the parade: boss, then the three gorillas staggered
+  // (chase-style), then the player carrying the next-level sign, each
+  // running off the right edge in turn. nextLevel() (which resets
+  // gorillas/boss/hazards) doesn't run until updateLevelClearScene() sees
+  // every actor clear of the screen, so the board stays frozen mid-cutscene.
+  function startLevelClearScene(clearedLevel) {
+    celebrateLevelClear(clearedLevel);
+    hazards = [];
+    // Clear any mid-chest-beat/windup pose so nobody runs off frozen in it.
+    gorillas.forEach(g => { g.shake = 0; });
+    boss.windup = 0;
+    boss.reload = 0;
+    const gorillaDelays = gorillas.map((g, i) => LEVEL_SCENE_BOSS_HEAD_START + i * LEVEL_SCENE_GORILLA_GAP);
+    const playerDelay = gorillaDelays[gorillaDelays.length - 1] + LEVEL_SCENE_GORILLA_GAP + LEVEL_SCENE_PLAYER_GAP;
+    levelClearScene = {
+      clearedLevel,
+      t: 0,
+      boss: { x: boss.x, delay: 0, done: false },
+      gorillas: gorillas.map((g, i) => ({ x: g.x, delay: gorillaDelays[i], done: false })),
+      player: { x: monkey.col, delay: playerDelay, done: false },
+    };
+    // Freeze the tween on the current (goal-row) position; the scene drives
+    // monkey.col directly from here on, same as gorillas[].x / boss.x.
+    monkey.animFrom = { col: monkey.col, row: monkey.row };
+    monkey.animTo = { col: monkey.col, row: monkey.row };
+    monkey.animT = 1;
+  }
+
+  // Runs one actor forward once the scene clock passes its delay, syncing
+  // its scene-local x back onto the live object draw() already reads from
+  // (boss.x / gorillas[i].x / monkey.col), so no drawing changes are needed
+  // to move them — only the sign (see draw()) is scene-specific.
+  function runSceneActor(actor, dt) {
+    if (levelClearScene.t < actor.delay || actor.done) return false;
+    actor.x += LEVEL_SCENE_RUN_SPEED * dt;
+    if (actor.x >= LEVEL_SCENE_EXIT_X) actor.done = true;
+    return true;
+  }
+
+  function updateLevelClearScene(dt) {
+    const scene = levelClearScene;
+    scene.t += dt;
+
+    runSceneActor(scene.boss, dt);
+    boss.x = scene.boss.x;
+
+    scene.gorillas.forEach((sg, i) => {
+      runSceneActor(sg, dt);
+      gorillas[i].x = sg.x;
+    });
+
+    runSceneActor(scene.player, dt);
+    monkey.col = scene.player.x;
+    monkey.animFrom.col = monkey.animTo.col = scene.player.x;
+
+    const allDone = scene.boss.done && scene.gorillas.every(sg => sg.done) && scene.player.done;
+    if (allDone) {
+      levelClearScene = null;
+      nextLevel();
+    }
   }
 
   // A hit starts a short death beat: the player freezes where it was hit
@@ -723,7 +804,7 @@
 
   // --- movement ---
   function tryMove(dirName) {
-    if (!gameRunning || moveLock || monkey.dead) return;
+    if (!gameRunning || moveLock || monkey.dead || levelClearScene) return;
     const d = DIRS[dirName];
     if (!d) return;
     // Rows stay discrete hops, but a left/right step is one sprite width,
@@ -775,8 +856,7 @@
         updateHud();
         recordProgress();
         if (gaps.every(g => g.filled)) {
-          celebrateLevelClear(level);
-          nextLevel();
+          startLevelClearScene(level);
         } else {
           lifeTime = LIFE_TIME_MAX;
           resetMonkey();
@@ -1357,13 +1437,16 @@
 
     // enemy gorillas; a shaking gorilla is chest-beating before its drop.
     // Drawn at its current patrol x, not its fixed home column — collision
-    // still blocks the home column (see tryMove()).
-    gorillas.forEach(g => {
+    // still blocks the home column (see tryMove()). During the level-clear
+    // scene, x is instead the running position (see updateLevelClearScene())
+    // and each gorilla gets a running bounce once it's under way.
+    gorillas.forEach((g, i) => {
       const beat = g.shake > 0 ? GORILLA_SHAKE_TIME - g.shake : -1;
       // A bit bigger than the player; hands rest on the bottom of row 0 and
       // the hat pokes up into the boss band.
       const size = SPRITE * 1.375;
-      drawPlushGorilla(ctx, (g.x + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true });
+      const hop = sceneRunBounce(levelClearScene && levelClearScene.gorillas[i]);
+      drawPlushGorilla(ctx, (g.x + 0.5) * CELL_W, CELL_H - 0.46 * size, size, HAT_PLUSH_COLORS, { beat, hat: true, hop });
     });
 
     // gaps
@@ -1425,13 +1508,54 @@
 
     // monkey
     const pos = currentMonkeyPos();
+    const playerScenePart = levelClearScene && levelClearScene.player;
     drawPlushGorilla(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H + PLUSH_CENTER_Y * playerSize(), playerSize(), PLAYER_COLORS, {
-      // sideways steps slide flat; only row changes bounce
-      hop: monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1,
+      // sideways steps slide flat; only row changes bounce (or the
+      // level-clear scene's own running bounce once the player sets off)
+      hop: playerScenePart ? sceneRunBounce(playerScenePart) : (monkey.animFrom.row !== monkey.animTo.row ? monkey.animT : 1),
       dead: monkey.dead,
       angle: monkey.dead ? deathSpinAngle() : 0,
     });
+    // Next-level sign: appears once the player actually sets off with the
+    // pack, so it reads as carried rather than conjured mid-air.
+    if (playerScenePart && levelClearScene.t >= playerScenePart.delay) {
+      drawLevelSign(ctx, (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H - playerSize() * 0.85, levelClearScene.clearedLevel + 1);
+    }
     ctx.restore();
+  }
+
+  // Bounce phase (0–1, feeding drawPlushGorilla's hop arch) for a
+  // level-clear scene actor: 0 before its delay elapses or after it's
+  // exited, otherwise a repeating run cycle timed from when it set off.
+  function sceneRunBounce(actor) {
+    if (!actor || levelClearScene.t < actor.delay || actor.done) return 1;
+    return ((levelClearScene.t - actor.delay) * LEVEL_SCENE_BOUNCE_RATE) % 1;
+  }
+
+  // A small wooden signpost held up announcing the next level, drawn just
+  // above the player during the back half of the level-clear scene.
+  function drawLevelSign(g, cx, cy, nextLevelNum) {
+    const postH = SPRITE * 0.32;
+    const w = SPRITE * 0.98, h = SPRITE * 0.52;
+    g.save();
+    g.translate(cx, cy);
+    g.strokeStyle = '#6b4a2b';
+    g.lineWidth = SPRITE * 0.07;
+    g.beginPath();
+    g.moveTo(0, 0);
+    g.lineTo(0, postH);
+    g.stroke();
+    g.fillStyle = '#f4e4c1';
+    g.strokeStyle = '#6b4a2b';
+    g.lineWidth = SPRITE * 0.05;
+    g.fillRect(-w / 2, -h, w, h);
+    g.strokeRect(-w / 2, -h, w, h);
+    g.fillStyle = '#2f4d2f';
+    g.font = `bold ${SPRITE * 0.15}px sans-serif`;
+    g.fillText('NEXT LEVEL', 0, -h * 0.7);
+    g.font = `bold ${SPRITE * 0.27}px sans-serif`;
+    g.fillText(String(nextLevelNum), 0, -h * 0.3);
+    g.restore();
   }
 
   // --- player gorilla scenes: splash/intro dance and the game-over
@@ -1511,26 +1635,30 @@
     lastTime = t;
 
     if (gameRunning) {
-      updateHazards(dt);
-      gaps.forEach(g => { g.cheer = Math.max(0, g.cheer - dt); });
-
-      if (deathTimer > 0) {
-        deathTimer -= dt;
-        if (deathTimer <= 0) finishDeath();
+      if (levelClearScene) {
+        updateLevelClearScene(dt);
       } else {
-        if (moveLock) {
-          monkey.animT += (dt * 1000) / monkey.animDuration;
-          if (monkey.animT >= 1) {
-            monkey.animT = 1;
-            finishMove();
+        updateHazards(dt);
+        gaps.forEach(g => { g.cheer = Math.max(0, g.cheer - dt); });
+
+        if (deathTimer > 0) {
+          deathTimer -= dt;
+          if (deathTimer <= 0) finishDeath();
+        } else {
+          if (moveLock) {
+            monkey.animT += (dt * 1000) / monkey.animDuration;
+            if (monkey.animT >= 1) {
+              monkey.animT = 1;
+              finishMove();
+            }
           }
+
+          lifeTime -= dt;
+          document.getElementById('timerbar').style.width = `${Math.max(lifeTime / LIFE_TIME_MAX, 0) * 100}%`;
+
+          const hit = (!moveLock && hazardHit()) || lifeTime <= 0;
+          if (hit) loseLife();
         }
-
-        lifeTime -= dt;
-        document.getElementById('timerbar').style.width = `${Math.max(lifeTime / LIFE_TIME_MAX, 0) * 100}%`;
-
-        const hit = (!moveLock && hazardHit()) || lifeTime <= 0;
-        if (hit) loseLife();
       }
     }
 

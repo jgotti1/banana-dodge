@@ -211,9 +211,12 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   why timers + game state went wrong before). Gap progress is *not*
   reset on a lost life, only on `newRun()`/`nextLevel()`.
 - **Level progression**: clearing a level (`nextLevel()`) resets the
-  gaps and monkey position, keeps score/lives, and multiplies hazard
-  speed by `speedMul()` (currently `1 + (level-1)*0.22`, compounding
-  each level — no cap, no new hazard patterns yet). Hazard *counts* are
+  gaps and monkey position, keeps score, adds one life (`sfxExtraLife()`,
+  uncapped — `renderLives()` just repeats an icon per life, no max), and
+  multiplies hazard speed by `speedMul()` (currently `1 + (level-1)*0.22`,
+  compounding each level — no cap, no new hazard patterns yet). `nextLevel()`
+  itself doesn't run until the level-clear cutscene finishes; see
+  Level-clear scene below. Hazard *counts* are
   otherwise fixed across levels, except both banana lanes, which have a
   `level1Count` on their `laneDefs` entry that `spawnHazards()` uses
   instead of `count` while `level === 1` (currently 2 on each lane, down
@@ -383,23 +386,44 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   kick at the hip, the tail swishes at its base, eyes blink via `scaleY`.
   `#levelClearOverlay` — `.monkey-happy` (squash-and-stretch jump, arms
   raised in a cheer, sparkle emoji orbiting), triggered by
-  `celebrateLevelClear(clearedLevel)` when all 4 gaps are filled. Unlike
-  the other overlays, this one is **not** a blocking full-screen modal
-  (class `toast`, not `overlay`) and never touches `gameRunning` —
-  `nextLevel()` runs immediately, gameplay never pauses, and the toast is
-  a small self-dismissing badge driven entirely by the `toastPop` CSS
-  animation plus an `animationend` listener that adds `hidden` back.
-  This was a deliberate rewrite after the previous pause-based design
-  (`gameRunning = false` for ~1.4s behind a full-screen overlay, resumed
-  from a `setTimeout`) could get its state clobbered by a hazard/timer
+  `celebrateLevelClear(clearedLevel)` when all 4 gaps are filled. It's a
+  small self-dismissing badge (class `toast`, not `overlay`) driven
+  entirely by the `toastPop` CSS animation plus an `animationend`
+  listener that adds `hidden` back — independent of and layered on top
+  of the canvas cutscene below, which is what actually holds up
+  `nextLevel()` now.
+- **Level-clear scene**: a Pac-Man-style "parade" that plays on the game
+  canvas itself between clearing a level and `nextLevel()` running: the
+  boss gorilla runs off the right edge, then the three top-hat gorillas
+  follow in a staggered chase, then the player — now carrying a small
+  wooden "NEXT LEVEL" sign (`drawLevelSign()`) — runs off after them.
+  `finishMove()` calls `startLevelClearScene(level)` instead of
+  `nextLevel()` directly when `gaps.every(g => g.filled)`; it clears
+  `hazards`, resets any gorilla mid-chest-beat / boss mid-windup pose so
+  nobody runs off frozen in it, and builds a `levelClearScene` object
+  with one `{x, delay, done}` entry per actor (boss, each gorilla,
+  player), staggered by `LEVEL_SCENE_BOSS_HEAD_START` /
+  `LEVEL_SCENE_GORILLA_GAP` / `LEVEL_SCENE_PLAYER_GAP`.
+  `updateLevelClearScene()` — called from `loop()`, **not** a
+  `setTimeout`, the same pattern as `deathTimer`/`DEATH_PAUSE` — advances
+  each actor past its delay at `LEVEL_SCENE_RUN_SPEED` and syncs its
+  scene-local `x` straight onto the live object (`boss.x`,
+  `gorillas[i].x`, `monkey.col`) that `draw()` already reads, so no
+  drawing changes were needed to move them; `sceneRunBounce()` adds a
+  running bounce once an actor is under way. Once every actor's `x`
+  passes `LEVEL_SCENE_EXIT_X` (off the right edge — the canvas clips the
+  rest, nothing needs explicit hiding), `levelClearScene` is cleared and
+  `nextLevel()` finally runs, which is also where gorillas/boss/hazards
+  get reset back to normal. While `levelClearScene` is set, `loop()`
+  skips `updateHazards`/the death timer/the life timer/hit checks
+  entirely (gameplay is effectively frozen for the cutscene's duration),
+  and `tryMove()` also bails early, but **`gameRunning` itself is never
+  set to `false`** for this — this was written carefully to avoid
+  repeating the old level-clear-toast bug (a `gameRunning = false` +
+  `setTimeout` pause could get its state clobbered by a hazard/timer
   check landing in the same frame, leaving a dark overlay stuck on
-  screen — the fix was to remove the shared timing state entirely
-  rather than patch the race. If you touch this again, keep it
-  non-blocking; don't reintroduce a `gameRunning` pause tied to a JS
-  timer for a purely cosmetic celebration. If you give this one a
-  canvas scene too, follow the game-over screen's example (a
-  `drawPlushGorilla()`-based scene via `makeScene()`) rather than
-  leaving it as the only mismatched sprite style across overlays.
+  screen). If you touch this again, keep the pause frame-driven through
+  `levelClearScene`/`loop()`; don't reach for `gameRunning` + `setTimeout`.
 
 ## Known gaps / discussed but not built
 

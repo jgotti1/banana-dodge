@@ -9,6 +9,8 @@
   const MONKEY_RADIUS = 0.32;
   const ANIM_DURATION = 120; // ms per hop
   const LIFE_TIME_MAX = 90; // seconds
+  const LEVEL_SPEED_GROWTH = 1.10;
+  const LEVEL_HAZARD_COUNT_GROWTH = 1.15;
 
   // Gorilla poop: a random gorilla shakes (telegraph), then drops poop that
   // falls straight down its column. It splats at the top of the start row,
@@ -69,15 +71,12 @@
   const laneDefs = [
     { type: 'goal' },
     { type: 'safe' },
-    // level1Count on both banana lanes eases level 1 (it was still too
-    // hard with just the first lane trimmed by one); level 2 on uses the
-    // normal count, see spawnHazards().
-    { type: 'banana', dir: 1, baseSpeed: 1.4, count: 3, level1Count: 2, radius: 0.22 },
+    { type: 'banana', dir: 1, baseSpeed: 1.4, count: 2, radius: 0.22 },
     { type: 'stick', dir: -1, baseSpeed: 1.1, count: 2, radius: 0.34 },
     { type: 'safe' },
     // Row 5 is the first banana lane the player reaches leaving the start
     // row (row 8, moving up through the row-6 stick lane).
-    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 4, level1Count: 2, radius: 0.22 },
+    { type: 'banana', dir: -1, baseSpeed: 1.7, count: 2, radius: 0.22 },
     { type: 'stick', dir: 1, baseSpeed: 1.3, count: 2, radius: 0.34 },
     { type: 'safe' },
     { type: 'start' },
@@ -549,7 +548,11 @@
 
   // --- level / hazard setup ---
   function speedMul() {
-    return 1 + (level - 1) * 0.22;
+    return LEVEL_SPEED_GROWTH ** (level - 1);
+  }
+
+  function hazardCountMul() {
+    return LEVEL_HAZARD_COUNT_GROWTH ** (level - 1);
   }
 
   // laneDefs speeds and counts are tuned for square cells. When cells are
@@ -560,10 +563,26 @@
   function spawnHazards() {
     hazards = [];
     const stretch = CELL_W / SPRITE;
-    laneDefs.forEach((lane, row) => {
-      if (lane.type !== 'banana' && lane.type !== 'stick') return;
-      const baseCount = (level === 1 && lane.level1Count != null) ? lane.level1Count : lane.count;
-      const count = Math.max(baseCount, Math.round(baseCount * stretch));
+    const scaledLanes = laneDefs
+      .map((lane, row) => ({ lane, row }))
+      .filter(({ lane }) => lane.type === 'banana' || lane.type === 'stick')
+      .map(entry => {
+        const exactCount = entry.lane.count * hazardCountMul() * stretch;
+        return { ...entry, exactCount, count: Math.floor(exactCount) };
+      });
+
+    // A lane cannot contain part of an object. Round the combined target,
+    // then give leftover objects to the lanes with the largest fractional
+    // share. This keeps the total density as close as possible to +15% per
+    // level without every two-object lane jumping to three at the same time.
+    const targetTotal = Math.round(scaledLanes.reduce((sum, entry) => sum + entry.exactCount, 0));
+    const assignedTotal = scaledLanes.reduce((sum, entry) => sum + entry.count, 0);
+    const lanesByRemainder = [...scaledLanes].sort((a, b) =>
+      (b.exactCount - b.count) - (a.exactCount - a.count) || a.row - b.row
+    );
+    for (let i = 0; i < targetTotal - assignedTotal; i++) lanesByRemainder[i].count++;
+
+    scaledLanes.forEach(({ lane, row, count }) => {
       for (let i = 0; i < count; i++) {
         hazards.push({
           row,

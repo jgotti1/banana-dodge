@@ -213,16 +213,14 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - **Level progression**: clearing a level (`nextLevel()`) resets the
   gaps and monkey position, keeps score, adds one life (`sfxExtraLife()`,
   uncapped — `renderLives()` just repeats an icon per life, no max), and
-  multiplies hazard speed by `speedMul()` (currently `1 + (level-1)*0.22`,
-  compounding each level — no cap, no new hazard patterns yet). `nextLevel()`
-  itself doesn't run until the level-clear cutscene finishes; see
-  Level-clear scene below. Hazard *counts* are
-  otherwise fixed across levels, except both banana lanes, which have a
-  `level1Count` on their `laneDefs` entry that `spawnHazards()` uses
-  instead of `count` while `level === 1` (currently 2 on each lane, down
-  from 3 and 4) to ease the first level; level 2 on uses the normal
-  count. This was tuned twice — trimming just the first banana lane by
-  one still wasn't enough, so both lanes now drop to 2.
+  multiplies hazard speed by `speedMul()` (currently `1.10 ** (level - 1)`,
+  so each level is 10% faster than the previous one). Banana and stick
+  density similarly uses `1.15 ** (level - 1)`. Because object counts must
+  be whole numbers, `spawnHazards()` rounds the combined target across all
+  four lanes and assigns the remainders to individual lanes, avoiding a
+  simultaneous two-to-three-object jump in every lane. Both multipliers
+  compound without a cap. `nextLevel()` itself doesn't run until the
+  level-clear cutscene finishes; see Level-clear scene below.
 - **Controls**: arrow keys / WASD (`keyMap`), plus an on-screen
   touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`. Enter
   or Space clicks Play (splash) or Play Again (game over) when that

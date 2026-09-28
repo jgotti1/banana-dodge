@@ -5,7 +5,7 @@
 A Frogger-style browser game. Guide your gorilla across jungle lanes of
 flying bananas and tumbling sticks, dodge whatever the gorillas drop, then slip
 into one of the four gaps between them at the top. Fill all four gaps to clear
-the level; each level is faster than the last.
+the level; each new level has about 15% more hazards moving 10% faster.
 
 The characters are drawn in the style of Gorilla Tag plush toys: you're a
 brown gorilla, the three gorillas guarding the top wear top hats, and a

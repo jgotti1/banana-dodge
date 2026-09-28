@@ -91,7 +91,8 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
 - **Gorilla poop**: `updateGorillas()` (called from `updateHazards()`)
   counts down `nextDropIn` (random 2.5–6s), then picks a random
   non-shaking gorilla and sets `gorillaShake[col]` to 0.7s as a
-  telegraph (drawn as a jitter/tilt, plus `sfxGrumble()`). When the
+  telegraph: the gorilla chest-beats (see Gorilla sprites) while
+  `sfxGorillaRoar()` and `sfxChestBeat()` play. When the
   shake ends it pushes a `type: 'poop'` object into the regular
   `hazards` array. Poop moves **vertically**: `x` is its column, `y` its
   row-center position, `speed` in rows/sec (scaled by `speedMul()`).
@@ -101,6 +102,30 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   poop and resets the shake/drop timers each run/level. Code that
   loops over `hazards` must branch on `type === 'poop'` because poop
   has no `row`/`dir`.
+- **Boss gorilla**: a bigger party-hat gorilla modeled on the owner's
+  Gorilla Tag plush reference (rounded black body, grey ears/face/chest,
+  big black-rimmed white eyes, long arms stretched out, rainbow zig-zag
+  party hat, a 💩 held in his left hand). He lives in a canopy band
+  `BOSS_BAND_ROWS` row-heights tall above row 0, sitting on a branch.
+  `updateBoss()` (called from `updateHazards()`) walks him between
+  `BOSS_MIN_X` and `BOSS_MAX_X` at `BOSS_SPEED` sprite widths/sec,
+  turning at the ends; every `BOSS_THROW_MIN`–`BOSS_THROW_MAX` seconds
+  he stops for `BOSS_WINDUP` (lifting the poop overhead, `sfxOohOoh()`),
+  then pushes a normal `type: 'poop'` hazard from his raised hand
+  (`BOSS_HAND_UP`) with `sfxBossThrow()`, and is empty-handed for
+  `BOSS_RELOAD`. Boss poop starts at negative `y` (up in the band) and
+  otherwise behaves exactly like gorilla poop. `bossSize()`,
+  `bossCenterX()`, and `bossCenterY()` are shared by drawing and the
+  throw so the poop leaves exactly where the hand is drawn. `drawBoss()`
+  is smooth (ellipses, round strokes) rather than faceted because the
+  reference is a plush; the hat is clipped rainbow stripes
+  (`drawPartyHat()`). Reset with the other gorillas in `spawnHazards()`.
+- **Canvas layout**: the canvas is `ROWS + BOSS_BAND_ROWS` row-heights
+  tall (see `resizeCanvas()`). `draw()` paints the band
+  (`drawBossBand()`), then `translate`s down by the band height so
+  everything else keeps the original grid coordinates with row 0 at
+  y = 0; the boss and his poop simply draw at negative y. Grid logic
+  (movement, collisions, hazard rows) never sees the band.
 - **Collision**: `hazardHit()` checks the monkey's current row
   (rounded from its mid-hop tween position) against hazards in that
   row using simple radius overlap, done in pixels: horizontal distance
@@ -110,19 +135,46 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   pixels) since it can hit from above.
 - **Life loop**: 3 lives, a per-life countdown timer
   (`lifeTime` / `LIFE_TIME_MAX`, 90s) shown as the HUD progress bar.
-  Losing a life (hazard hit or timer expiry) or running out of time
-  respawns the monkey at the start row via `resetMonkey()`; losing
-  the last life calls `gameOver()`. Gap progress is *not* reset on a
-  lost life, only on `newRun()`/`nextLevel()`.
+  A hazard hit or timer expiry calls `loseLife()`, which decrements
+  `lives`, plays `sfxLifeLost()`, sets `monkey.dead`, and starts a
+  `DEATH_PAUSE` (0.9s) countdown in `deathTimer`. During it the player
+  spins and shows X eyes (`deathSpinAngle()`), input is ignored, and
+  `loop()` skips the move/timer/hit checks; hazards keep moving. When
+  it hits zero, `finishDeath()` respawns via `resetMonkey()` or, on the
+  last life, calls `gameOver()`, so the game-over screen waits until
+  the hit has been seen. The countdown lives in `loop()`, not a
+  `setTimeout`, on purpose (see the level-clear toast note below for
+  why timers + game state went wrong before). Gap progress is *not*
+  reset on a lost life, only on `newRun()`/`nextLevel()`.
 - **Level progression**: clearing a level (`nextLevel()`) resets the
   gaps and monkey position, keeps score/lives, and multiplies hazard
   speed by `speedMul()` (currently `1 + (level-1)*0.22`, compounding
   each level — no cap, no new hazard patterns yet).
 - **Controls**: arrow keys / WASD (`keyMap`), plus an on-screen
-  touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`.
+  touch d-pad (`#btn-up/down/left/right`). Both call `tryMove`. Enter
+  or Space clicks Play (splash) or Play Again (game over) when that
+  screen is showing.
 - **Audio**: WebAudio only, no audio files.
-  - `beep()` synthesizes short sound effects: hop, score, hit, level
-    clear, game over, new high score, gorilla grumble, poop plop.
+  - Three synth building blocks:
+    - `beep()`: fixed-pitch tone (hop, score, level clear, game over,
+      new high score, poop plop).
+    - `glide()`: pitch slide with soft attack and optional vibrato.
+    - `apeVoice()`: the vocal one. A sawtooth with a pitch slide and
+      wobble, run through two band-pass filters tuned to vowel formants
+      (`VOWELS.oo` / `VOWELS.aa`), which is what makes it sound like an
+      ape rather than a beep. `noiseBurst()` adds band-passed white
+      noise for breath, rasp, and slaps (the noise buffer is created
+      once and reused).
+  - Ape sounds, all built from those:
+    - `sfxGorillaRoar()` plus `sfxChestBeat()` (six rapid hollow pops)
+      when an enemy gorilla starts chest-beating.
+    - `sfxOohOoh()` when you park in a gap.
+    - `sfxApeCall()`, a chimp-style pant-hoot (accelerating, rising
+      "hoo" pants with inhales, then two "aah" screams), on level clear
+      and mixed into the music at 75% volume every 36–80 music steps
+      (~8–18s, counted in `playMusicStep()`, so muting music mutes these).
+    - `sfxLifeLost()` (thud, falling slide, sad whimper) on losing a
+      life; deliberately unlike the other sounds so a hit is obvious.
   - A looping background tune is generated the same way: `startMusic()`
     schedules `playMusicStep()` on an interval, stepping through a
     fixed pentatonic note sequence (`MUSIC_SCALE` / `MUSIC_PATTERN`)
@@ -155,6 +207,45 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   and squashed every sprite sideways. `resizeCanvas()` now reads back
   the canvas's rendered width as a safeguard, so a clamp would shrink
   the board instead of distorting it.
+- **Gorilla sprites**: three different looks, each modeled on a
+  reference image the owner supplied. All positions use `CELL_W`/`CELL_H`
+  and all sizes derive from `SPRITE`.
+  - **Player** (and parked players in filled gaps, and the splash
+    dancer): `drawGorilla(cx, cy, size, PLAYER_COLORS, { hop, beat,
+    dead, angle, g })`, modeled on a Gorilla Tag avatar: low-poly,
+    flat-shaded (light / mid / dark facets), front-facing, **no legs**
+    (a bulky floating torso), huge arms splayed wide with hands planted
+    flat, a big head with a pale face mask, big white eyes, dark brows,
+    a two-nostril nose, and a pale chest plate. Brown fur. Built from
+    polygons via `shape()`/`limb()`/`ellipseFill()`. Size is
+    `playerSize()` (1.0 × `SPRITE`), which is visual only; collisions
+    still use `MONKEY_RADIUS`, so the sprite can be resized without
+    changing gameplay. Options:
+    - `hop`: jump progress (pass `monkey.animT`); lifts the body and
+      swings the planted hands up.
+    - `beat`: seconds into a chest-beat; the arms come in front of the
+      torso and alternate fists onto the chest at
+      `CHEST_BEATS_PER_SEC`, and the mouth opens (splash dance).
+    - `dead` / `angle`: X eyes and an "o" mouth, rotated by
+      `deathSpinAngle()` (two eased spins, settling tipped over).
+    - `g`: which canvas context to draw on (default: the game canvas).
+  - **The three goal-row gorillas**: `drawHatGorilla(g, cx, cy, size,
+    { beat })` (`HAT_PLUSH_COLORS`), modeled on a top-hat Gorilla Tag
+    plush: smooth, not faceted. A sitting black plush with grey ears,
+    face and chest, a long grey nose ridge, eyes outlined in light-blue
+    stitching, a stitched "w" mouth, arms resting down in front with
+    hands on the ground, and a tall black top hat with a grey band (a
+    faint light rim keeps it readable on the black head). Drawn at
+    1.25 × `playerSize()`, standing on the bottom of row 0 with the hat
+    reaching up into the boss band (the boss draws in front of it when
+    he walks past). `beat` is `GORILLA_SHAKE_TIME - gorillaShake[col]`
+    while shaking, else -1; it bounces the body and hat, opens the
+    mouth, and alternates fists onto the chest.
+  - **The boss**: `drawBoss()`, see Boss gorilla.
+  The owner asked specifically that the eyes never be covered: brows sit
+  just above the eyes, and nothing (hats, shades) overlaps them. The HUD
+  lives counter still uses 🐒 text, and the intro / level-clear /
+  game-over screens still use the old SVG cartoon monkey rig.
 - **Canvas emoji and `fillStyle`**: color emoji drawn with `fillText`
   take on the alpha of the current `fillStyle`. `draw()` resets
   `fillStyle` to opaque `#fff` before emoji and right after the
@@ -176,8 +267,20 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   the game-over screen shows "New high score!". It deliberately does
   **not** fire when there was no previous record (best of 0), so a
   first-ever game doesn't get confetti for its first 50 points.
-- **Overlay screens**: four screens (three full-screen, one toast), each centered on a
-  hand-built SVG monkey (inline `<svg>` per overlay in `index.html`,
+- **Splash screen** (`#startOverlay.splash`): a title card
+  (`.splash-card`) with a kicker line, a two-tone "Banana / Dodge"
+  title, a spotlight stage holding `<canvas id="splashDancer">`, the
+  tagline, best score / highest level stat tiles, a big Play button,
+  and a controls hint (keyboard version, or a touch version via
+  `@media (hover: none) and (pointer: coarse)`). The dancer is the
+  player gorilla drawn with `drawGorilla(..., { g: splashCtx })` by
+  `drawSplashDancer()`, called from the main `loop()` only while the
+  splash is visible (no separate rAF). One `DANCE_PERIOD` (4.2s) loop:
+  bounce-and-sway groove, chest-beat, hop-spin. The splash card fades
+  in with a CSS animation, so a static renderer (e.g. Quick Look)
+  shows it invisible; disable the animation to inspect the layout.
+- **Other overlay screens**: three more screens (two full-screen, one
+  toast), each centered on a hand-built SVG monkey (inline `<svg>` per overlay in `index.html`,
   not an emoji) with independently animated limbs. The rig is a set
   of `<g>` groups (`.m-head`, `.m-tail`, `.m-arm-left/right`,
   `.m-leg-left/right`, `.m-eyes`, `.m-brow-left/right`) each given a
@@ -187,10 +290,8 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   `scaleY`. A given overlay's expression (sunglasses, eyebrow angle,
   mouth shape, cheek flush) is just different static SVG paths drawn
   into the same anatomy, one full copy per state:
-  - `#startOverlay` — the splash screen, `.monkey-idle` (gentle sway,
-    blink, tail swish), shown on load until "Start Game" is clicked.
-  - `#introOverlay` — `.monkey-cool` (sunglasses, arm-pump/leg-kick
-    dance), shown via `showIntro(callback)` for ~1.1s before both
+  - `#introOverlay` — `.monkey-cool` (sunglasses pushed up on his
+    forehead so the eyes show, arm-pump/leg-kick dance), shown via `showIntro(callback)` for ~1.1s before both
     `startBtn` and `restartBtn` hand off to `newRun()`. Gameplay is
     paused (not yet started) while this shows.
   - `#levelClearOverlay` — `.monkey-happy` (squash-and-stretch jump,

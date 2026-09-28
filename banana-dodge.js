@@ -19,6 +19,20 @@
   const GORILLA_SHAKE_TIME = 0.7; // seconds of warning before the drop
   const DROP_INTERVAL_MIN = 2.5;
   const DROP_INTERVAL_MAX = 6;
+  const DEATH_PAUSE = 0.9; // seconds the X-eyed player stays on screen after a hit
+
+  // Boss gorilla: a bigger party-hat gorilla on a branch in a band above
+  // the goal row. He waddles side to side, and every few seconds stops,
+  // lifts the poop he's holding overhead, and throws it straight down.
+  const BOSS_BAND_ROWS = 1.8; // height of the band above row 0, in row heights
+  const BOSS_SPEED = 1.3; // sprite widths per second
+  const BOSS_MIN_X = 0.8; // column range his center walks between
+  const BOSS_MAX_X = COLS - 1.5;
+  const BOSS_WINDUP = 0.6; // seconds lifting the poop before the throw
+  const BOSS_RELOAD = 0.9; // seconds empty-handed after a throw
+  const BOSS_THROW_MIN = 3;
+  const BOSS_THROW_MAX = 7;
+  const BOSS_HAND_UP = [-0.3, -0.62]; // raised throwing hand, in boss unit space
 
   const EMOJI_FONT = 'Apple Color Emoji, "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
 
@@ -67,9 +81,11 @@
   const MAX_CELL_H_RATIO = 1.5;
   let hazards = [];
   let gorillaShake = {}; // gorilla col -> seconds of shaking left
+  let boss = { x: 3, dir: 1, windup: 0, reload: 0, nextThrowIn: 4 };
   let nextDropIn = 0;
   const gaps = GAP_COLS.map(col => ({ col, filled: false }));
   let monkey, moveLock, level, score, lives, lifeTime, gameRunning;
+  let deathTimer = 0;
   let lastTime = 0;
 
   // --- audio: sound effects ---
@@ -98,8 +114,6 @@
   }
   const sfxHop = () => beep(520, 0.05, 'square', 0.04);
   const sfxScore = () => { beep(660, 0.08, 'triangle', 0.06); beep(880, 0.1, 'triangle', 0.06, 0.08); };
-  const sfxHit = () => beep(160, 0.25, 'sawtooth', 0.07);
-  const sfxGrumble = () => { beep(110, 0.35, 'sawtooth', 0.035); beep(95, 0.35, 'sawtooth', 0.03, 0.12); };
   const sfxPlop = () => { beep(420, 0.06, 'sine', 0.06); beep(210, 0.12, 'sine', 0.06, 0.05); };
   const sfxHighScore = () => [784, 988, 1175, 1568, 1976].forEach((f, i) => beep(f, 0.14, 'triangle', 0.06, i * 0.08));
   const sfxLevel = () => [523, 659, 784, 1047].forEach((f, i) => beep(f, 0.12, 'triangle', 0.06, i * 0.1));
@@ -107,6 +121,147 @@
     [400, 300, 200, 150].forEach((f, i) => beep(f, 0.22, 'sawtooth', 0.07, i * 0.18));
     beep(90, 0.6, 'sawtooth', 0.08, 4 * 0.18); // final low "womp" for a sad-trombone finish
   };
+
+  // Like beep(), but the pitch slides from f0 to f1 with a soft attack and
+  // optional vibrato (Hz of wobble). Sliding, wobbly tones read as vocal,
+  // which is how the ape calls below sound like hoots instead of beeps.
+  function glide(f0, f1, duration, { type = 'triangle', gain = 0.05, delay = 0, vibrato = 0 } = {}) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + duration);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+    if (vibrato) {
+      const lfo = audioCtx.createOscillator();
+      const depth = audioCtx.createGain();
+      lfo.frequency.value = 7;
+      depth.gain.value = vibrato;
+      lfo.connect(depth);
+      depth.connect(osc.frequency);
+      lfo.start(t);
+      lfo.stop(t + duration + 0.02);
+    }
+    osc.start(t);
+    osc.stop(t + duration + 0.02);
+  }
+
+  // --- audio: ape sounds ---
+  // A voice is a buzzy sawtooth run through two band-pass filters tuned to
+  // vowel "formants" (the mouth resonances that make "oo" sound different
+  // from "aa"). That, plus a pitch slide and wobble, is what makes these
+  // read as ape hoots and screams instead of beeps.
+  const VOWELS = {
+    oo: [[330, 7], [760, 9]],
+    aa: [[780, 6], [1180, 8]],
+  };
+
+  function apeVoice(f0, f1, duration, { vowel = 'oo', gain = 0.12, delay = 0, wobble = 0.03 } = {}) {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(f0, t);
+    osc.frequency.exponentialRampToValueAtTime(f1, t + duration);
+
+    const lfo = audioCtx.createOscillator();
+    const lfoDepth = audioCtx.createGain();
+    lfo.frequency.value = 6;
+    lfoDepth.gain.value = f0 * wobble;
+    lfo.connect(lfoDepth);
+    lfoDepth.connect(osc.frequency);
+
+    const env = audioCtx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(gain, t + 0.035);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    env.connect(audioCtx.destination);
+    for (const [freq, q] of VOWELS[vowel]) {
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = freq;
+      bp.Q.value = q;
+      osc.connect(bp);
+      bp.connect(env);
+    }
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + duration + 0.02);
+    lfo.stop(t + duration + 0.02);
+  }
+
+  let noiseBuffer = null;
+  function noiseBurst(duration, { freq = 1200, q = 1, gain = 0.05, delay = 0 } = {}) {
+    if (!audioCtx) return;
+    if (!noiseBuffer) {
+      noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate, audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    }
+    const t = audioCtx.currentTime + delay;
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuffer;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = freq;
+    bp.Q.value = q;
+    const env = audioCtx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    src.connect(bp);
+    bp.connect(env);
+    env.connect(audioCtx.destination);
+    src.start(t);
+    src.stop(t + duration + 0.02);
+  }
+
+  // Chimp-style pant-hoot: breathy "hoo" pants that speed up and climb in
+  // pitch, with an inhale between each, climaxing in two "aah" screams.
+  // vol scales the whole call (the music mixes it in quieter).
+  const sfxApeCall = (vol = 1, delay = 0) => {
+    const hoots = [0, 0.22, 0.41, 0.57, 0.7, 0.81];
+    hoots.forEach((d, i) => {
+      const base = 230 + i * 45;
+      apeVoice(base, base * 1.35, 0.13, { vowel: 'oo', gain: 0.13 * vol, delay: delay + d });
+      noiseBurst(0.06, { freq: 1500, q: 0.8, gain: 0.025 * vol, delay: delay + d + 0.13 }); // inhale
+    });
+    [0.95, 1.2].forEach((d, i) =>
+      apeVoice(880 - i * 60, 640, 0.24, { vowel: 'aa', gain: 0.12 * vol, delay: delay + d, wobble: 0.06 }));
+  };
+  const sfxOohOoh = (delay = 0) =>
+    [0, 0.15].forEach(d => apeVoice(320, 480, 0.12, { vowel: 'oo', gain: 0.12, delay: delay + d }));
+  // Losing a life: a thud, a cartoon falling slide, and a sad descending
+  // ape whimper. Deliberately unlike the hop/score beeps so it's unmistakable.
+  const sfxLifeLost = () => {
+    noiseBurst(0.12, { freq: 300, q: 1, gain: 0.12 });
+    glide(760, 110, 0.5, { type: 'square', gain: 0.045 });
+    apeVoice(480, 210, 0.4, { vowel: 'oo', gain: 0.13, delay: 0.14, wobble: 0.05 });
+  };
+  // Loud gorilla roar that goes with the chest-beat: a deep growling "aah"
+  // with a scream layered an octave-ish above it and a breathy rasp.
+  const sfxGorillaRoar = () => {
+    apeVoice(210, 150, 0.75, { vowel: 'aa', gain: 0.22, wobble: 0.09 });
+    apeVoice(560, 380, 0.6, { vowel: 'aa', gain: 0.12, delay: 0.05, wobble: 0.07 });
+    noiseBurst(0.6, { freq: 900, q: 0.7, gain: 0.05 });
+  };
+  // Hollow, rapid "pok-pok-pok": a quick low pitch drop plus a slap of noise.
+  const sfxBossThrow = () => {
+    apeVoice(300, 470, 0.18, { vowel: 'aa', gain: 0.13 }); // "hah!"
+    noiseBurst(0.18, { freq: 2000, q: 0.7, gain: 0.04 }); // whoosh
+    sfxPlop();
+  };
+  const sfxChestBeat = () =>
+    [0, 0.085, 0.17, 0.255, 0.34, 0.425].forEach(d => {
+      glide(240, 85, 0.07, { type: 'sine', gain: 0.12, delay: d });
+      noiseBurst(0.04, { freq: 500, q: 1.5, gain: 0.05, delay: d });
+    });
 
   // --- audio: looping "fun monkey" background music ---
   // Bouncy marimba-style pentatonic riff with a light bongo thump, all synthesized (no audio files).
@@ -116,6 +271,9 @@
   let musicIndex = 0;
   let musicTimer = null;
   let musicEnabled = true;
+  // Quiet ape calls mixed into the music every ~8-18s (36-80 steps).
+  const randomApeCallSteps = () => 36 + Math.floor(Math.random() * 45);
+  let stepsToApeCall = randomApeCallSteps();
 
   function playMusicStep() {
     if (!musicEnabled || !audioCtx) return;
@@ -124,6 +282,10 @@
     const accent = step % 4 === 0;
     beep(freq, 0.18, 'triangle', accent ? 0.05 : 0.032);
     if (step % 2 === 0) beep(110, 0.06, 'sine', 0.02); // bongo thump on the downbeat
+    if (--stepsToApeCall <= 0) {
+      sfxApeCall(0.75);
+      stepsToApeCall = randomApeCallSteps();
+    }
     musicIndex++;
   }
 
@@ -282,10 +444,58 @@
     });
     gorillaShake = {};
     nextDropIn = randomDropInterval();
+    boss = {
+      x: (BOSS_MIN_X + BOSS_MAX_X) / 2,
+      dir: Math.random() < 0.5 ? -1 : 1,
+      windup: 0,
+      reload: 0,
+      nextThrowIn: randomBossThrow(),
+    };
   }
 
   function randomDropInterval() {
     return DROP_INTERVAL_MIN + Math.random() * (DROP_INTERVAL_MAX - DROP_INTERVAL_MIN);
+  }
+
+  function randomBossThrow() {
+    return BOSS_THROW_MIN + Math.random() * (BOSS_THROW_MAX - BOSS_THROW_MIN);
+  }
+
+  // Boss geometry, shared by drawing and by the throw (so the poop leaves
+  // exactly where his raised hand is drawn). y is in the translated grid
+  // space draw() uses, where row 0 starts at y = 0 and the band is above it.
+  const bossSize = () => SPRITE * 1.3;
+  const bossCenterX = () => (boss.x + 0.5) * CELL_W;
+  const bossCenterY = () => -0.1 * CELL_H - 0.38 * bossSize();
+
+  function updateBoss(dt) {
+    if (boss.reload > 0) boss.reload -= dt;
+    if (boss.windup > 0) {
+      boss.windup -= dt;
+      if (boss.windup <= 0) {
+        const px = bossCenterX() + BOSS_HAND_UP[0] * bossSize();
+        const py = bossCenterY() + BOSS_HAND_UP[1] * bossSize();
+        hazards.push({
+          type: 'poop',
+          x: px / CELL_W - 0.5,
+          y: py / CELL_H - 0.5,
+          radius: POOP_RADIUS,
+          speed: POOP_FALL_SPEED * speedMul(),
+        });
+        boss.reload = BOSS_RELOAD;
+        sfxBossThrow();
+      }
+      return; // he stands still while winding up
+    }
+    boss.x += boss.dir * BOSS_SPEED * (SPRITE / CELL_W) * dt;
+    if (boss.x < BOSS_MIN_X) { boss.x = BOSS_MIN_X; boss.dir = 1; }
+    if (boss.x > BOSS_MAX_X) { boss.x = BOSS_MAX_X; boss.dir = -1; }
+    boss.nextThrowIn -= dt;
+    if (boss.nextThrowIn <= 0 && boss.reload <= 0) {
+      boss.windup = BOSS_WINDUP;
+      boss.nextThrowIn = randomBossThrow();
+      sfxOohOoh();
+    }
   }
 
   // Poop lives in the same `hazards` array as bananas/barrels (type 'poop'),
@@ -296,7 +506,8 @@
       const idle = GORILLA_COLS.filter(col => !(gorillaShake[col] > 0));
       if (idle.length) {
         gorillaShake[idle[Math.floor(Math.random() * idle.length)]] = GORILLA_SHAKE_TIME;
-        sfxGrumble();
+        sfxGorillaRoar();
+        sfxChestBeat();
       }
       nextDropIn = randomDropInterval();
     }
@@ -322,8 +533,10 @@
       animFrom: { col: 3, row: ROWS - 1 },
       animTo: { col: 3, row: ROWS - 1 },
       animT: 1,
+      dead: false,
     };
     moveLock = false;
+    deathTimer = 0;
   }
 
   function newRun() {
@@ -367,6 +580,7 @@
   // the screen stuck.
   function celebrateLevelClear(clearedLevel) {
     sfxLevel();
+    sfxApeCall(1, 0.45);
     const overlay = document.getElementById('levelClearOverlay');
     document.getElementById('levelClearTitle').textContent = `Level ${clearedLevel} Clear!`;
     overlay.classList.remove('hidden', 'toast-anim');
@@ -374,10 +588,20 @@
     overlay.classList.add('toast-anim');
   }
 
+  // A hit starts a short death beat: the player freezes where it was hit
+  // with X eyes while the life-lost sound plays. The countdown runs inside
+  // loop() (not a setTimeout), and hazard/timer checks are skipped during
+  // it, so nothing can double-fire. finishDeath() then respawns or ends the
+  // run, which means the game-over screen waits until you've seen the hit.
   function loseLife() {
     lives--;
-    sfxHit();
+    sfxLifeLost();
     updateHud();
+    monkey.dead = true;
+    deathTimer = DEATH_PAUSE;
+  }
+
+  function finishDeath() {
     if (lives <= 0) {
       gameOver();
     } else {
@@ -397,7 +621,7 @@
 
   // --- movement ---
   function tryMove(dirName) {
-    if (!gameRunning || moveLock) return;
+    if (!gameRunning || moveLock || monkey.dead) return;
     const d = DIRS[dirName];
     if (!d) return;
     const nc = monkey.col + d.dc;
@@ -425,6 +649,7 @@
         gap.filled = true;
         score += 50;
         sfxScore();
+        sfxOohOoh(0.2);
         updateHud();
         recordProgress();
         if (gaps.every(g => g.filled)) {
@@ -452,6 +677,7 @@
     }
     hazards = hazards.filter(h => h.type !== 'poop' || h.y < POOP_LAND_Y);
     updateGorillas(dt);
+    updateBoss(dt);
   }
 
   function currentMonkeyPos() {
@@ -481,6 +707,19 @@
 
   // --- input ---
   window.addEventListener('keydown', (e) => {
+    // Enter / Space presses Play or Play Again when that screen is showing.
+    if (e.code === 'Enter' || e.code === 'Space') {
+      const screenBtn = !document.getElementById('startOverlay').classList.contains('hidden')
+        ? document.getElementById('startBtn')
+        : !document.getElementById('gameOverOverlay').classList.contains('hidden')
+          ? document.getElementById('restartBtn')
+          : null;
+      if (screenBtn) {
+        e.preventDefault();
+        screenBtn.click();
+        return;
+      }
+    }
     const dir = keyMap[e.code];
     if (!dir) return;
     e.preventDefault();
@@ -547,7 +786,7 @@
     const availableHeight = Math.max(200, window.innerHeight - chromeHeight);
     const availableWidth = Math.max(240, window.innerWidth - paddingH);
     const fitW = availableWidth / COLS;
-    const fitH = availableHeight / ROWS;
+    const fitH = availableHeight / (ROWS + BOSS_BAND_ROWS);
     CELL_W = Math.min(fitW, fitH * MAX_CELL_W_RATIO);
     CELL_H = Math.min(fitH, CELL_W * MAX_CELL_H_RATIO);
     SPRITE = Math.min(CELL_W, CELL_H);
@@ -562,7 +801,7 @@
       SPRITE = Math.min(CELL_W, CELL_H);
     }
     const width = CELL_W * COLS;
-    const height = CELL_H * ROWS;
+    const height = CELL_H * (ROWS + BOSS_BAND_ROWS);
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(width * dpr);
     canvas.height = Math.round(height * dpr);
@@ -572,10 +811,455 @@
   window.addEventListener('resize', resizeCanvas);
   window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
 
+  // --- gorilla sprites: low-poly, flat-shaded, front-facing, modeled on
+  // Gorilla Tag avatars: no legs, a bulky floating torso, huge arms splayed
+  // out with hands planted flat, and a big head with a pale face mask. Used
+  // for the (brown) player and the splash dancer. ---
+  const PLAYER_COLORS = {
+    furLight: '#a0703f',
+    fur: '#7c522c',
+    furDark: '#57381d',
+    face: '#f0ebe4',
+    faceDark: '#cfc5b8',
+    brow: '#4a3522',
+    ink: '#1a100a',
+  };
+  // Player sprite size in px; the top-hat gorillas are drawn at 1.25x this.
+  const playerSize = () => SPRITE * 1.0; // visual only; the hit box is MONKEY_RADIUS
+  const CHEST_BEATS_PER_SEC = 4; // per arm; arms alternate, so 8 hits/sec
+
+  function shape(g, points, color) {
+    g.beginPath();
+    g.moveTo(points[0], points[1]);
+    for (let i = 2; i < points.length; i += 2) g.lineTo(points[i], points[i + 1]);
+    g.closePath();
+    g.fillStyle = color;
+    g.fill();
+    g.stroke();
+  }
+
+  // A straight limb segment of width w between two points.
+  function limb(g, x0, y0, x1, y1, w, color) {
+    const len = Math.hypot(x1 - x0, y1 - y0) || 1;
+    const nx = (-(y1 - y0) / len) * (w / 2);
+    const ny = ((x1 - x0) / len) * (w / 2);
+    shape(g, [x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny], color);
+  }
+
+  function ellipseFill(g, x, y, rx, ry, color) {
+    g.beginPath();
+    g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+    g.fillStyle = color;
+    g.fill();
+  }
+
+  // Drawn in a unit box (about ±0.5) centered on (cx, cy), scaled by size.
+  // Options:
+  //   hop   0..1 jump progress: lifts the body and swings the planted hands
+  //         up mid-hop (1 = standing).
+  //   beat  seconds into a chest-beat, or -1 when not beating. While
+  //         beating the arms come up in front of the torso, the fists
+  //         alternate onto the chest, and the mouth opens.
+  //   dead  X eyes and an "o" mouth (player after a hit).
+  //   angle rotation in radians (death spin, splash dance).
+  //   g     canvas context to draw on (defaults to the game canvas).
+  function drawGorilla(cx, cy, size, c, { hop = 1, beat = -1, dead = false, angle = 0, g = ctx } = {}) {
+    const lift = dead ? 0 : Math.sin(hop * Math.PI);
+    const beating = beat >= 0;
+    const bob = beating ? Math.abs(Math.sin(beat * Math.PI * 2 * CHEST_BEATS_PER_SEC)) * 0.03 : 0;
+    g.save();
+    g.translate(cx, cy - (lift * 0.08 + bob) * size);
+    if (angle) g.rotate(angle);
+    g.scale(size, size);
+    g.lineJoin = 'round';
+    g.lineWidth = 0.016;
+    g.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+
+    // arms planted wide, hands flat on the ground (behind the torso)
+    if (!beating) {
+      for (const s of [-1, 1]) {
+        const upper = s < 0 ? c.furLight : c.fur;
+        const fore = s < 0 ? c.fur : c.furDark;
+        const ex = s * 0.4;
+        const ey = 0.12 - lift * 0.06;
+        const wx = s * (0.52 - lift * 0.06);
+        const wy = 0.37 - lift * 0.14;
+        limb(g, s * 0.27, -0.01, ex, ey, 0.15, upper);
+        limb(g, ex, ey, wx, wy, 0.19, fore);
+        ellipseFill(g, ex, ey, 0.07, 0.07, fore); // elbow joint, hides the seam
+        shape(g, [wx - s * 0.07, wy - 0.02, wx + s * 0.09, wy - 0.01, wx + s * 0.13, wy + 0.06,
+          wx + s * 0.02, wy + 0.08, wx - s * 0.08, wy + 0.07], fore); // flat hand
+        g.beginPath(); // finger creases
+        g.moveTo(wx + s * 0.03, wy + 0.02); g.lineTo(wx + s * 0.06, wy + 0.075);
+        g.moveTo(wx + s * 0.08, wy + 0.02); g.lineTo(wx + s * 0.1, wy + 0.07);
+        g.stroke();
+      }
+    }
+
+    // torso: lit upper-left, mid upper-right, shadowed underside
+    shape(g, [-0.3, -0.06, 0, -0.06, 0, 0.18, -0.33, 0.1], c.furLight);
+    shape(g, [0, -0.06, 0.3, -0.06, 0.33, 0.1, 0, 0.18], c.fur);
+    shape(g, [-0.33, 0.1, 0, 0.18, 0.33, 0.1, 0.24, 0.3, 0.08, 0.36, -0.08, 0.36, -0.24, 0.3], c.furDark);
+    shape(g, [-0.22, 0, 0, 0.02, 0, 0.21, -0.12, 0.25, -0.23, 0.14], c.face); // chest plate, lit half
+    shape(g, [0, 0.02, 0.22, 0, 0.23, 0.14, 0.12, 0.25, 0, 0.21], c.faceDark); // shaded half
+
+    if (beating) {
+      for (const s of [-1, 1]) {
+        // 0 = fist pulled back up, 1 = fist on the chest; the arms are half a
+        // cycle apart so they alternate.
+        const phase = beat * Math.PI * 2 * CHEST_BEATS_PER_SEC + (s < 0 ? 0 : Math.PI);
+        const v = 0.5 + 0.5 * Math.sin(phase);
+        const fx = s * (0.34 - 0.22 * v);
+        const fy = -0.16 + 0.24 * v;
+        const tone = s < 0 ? c.furLight : c.furDark;
+        limb(g, s * 0.27, -0.02, s * 0.46, 0.08, 0.15, tone);
+        limb(g, s * 0.46, 0.08, fx, fy, 0.17, tone);
+        ellipseFill(g, s * 0.46, 0.08, 0.08, 0.08, tone); // elbow joint
+        shape(g, [fx - 0.07, fy - 0.06, fx + 0.07, fy - 0.06, fx + 0.075, fy + 0.06, fx - 0.075, fy + 0.06], c.fur); // fist
+      }
+    }
+
+    // head: lit cap, mid left, shadowed right
+    shape(g, [-0.12, -0.49, 0.12, -0.49, 0.23, -0.4, 0, -0.36, -0.23, -0.4], c.furLight);
+    shape(g, [-0.23, -0.4, 0, -0.36, 0, -0.02, -0.1, -0.02, -0.21, -0.08, -0.26, -0.25], c.fur);
+    shape(g, [0.23, -0.4, 0.26, -0.25, 0.21, -0.08, 0.1, -0.02, 0, -0.02, 0, -0.36], c.furDark);
+
+    // pale face mask
+    shape(g, [-0.19, -0.34, 0.19, -0.34, 0.22, -0.24, 0.16, -0.12, 0.09, -0.05, -0.09, -0.05, -0.16, -0.12, -0.22, -0.24], c.face);
+
+    // brows sit just above the eyes and never overlap them
+    const slope = 0.025;
+    for (const s of [-1, 1]) {
+      shape(g, [s * 0.18, -0.335 - slope, s * 0.035, -0.325, s * 0.035, -0.295, s * 0.17, -0.305 - slope], c.brow);
+    }
+
+    // eyes: big white eyeballs, black pupils looking slightly inward
+    for (const s of [-1, 1]) ellipseFill(g, s * 0.08, -0.245, 0.05, 0.042, '#ffffff');
+    g.strokeStyle = c.ink;
+    if (dead) {
+      g.lineWidth = 0.03;
+      g.lineCap = 'round';
+      for (const s of [-1, 1]) {
+        const ex = s * 0.08;
+        const ey = -0.245;
+        const r = 0.028;
+        g.beginPath();
+        g.moveTo(ex - r, ey - r); g.lineTo(ex + r, ey + r);
+        g.moveTo(ex + r, ey - r); g.lineTo(ex - r, ey + r);
+        g.stroke();
+      }
+    } else {
+      for (const s of [-1, 1]) {
+        ellipseFill(g, s * 0.072, -0.24, 0.024, 0.024, c.ink);
+        ellipseFill(g, s * 0.072 - 0.008, -0.248, 0.007, 0.007, '#ffffff'); // glint
+      }
+    }
+
+    // nose and mouth
+    for (const s of [-1, 1]) ellipseFill(g, s * 0.03, -0.16, 0.018, 0.011, c.ink);
+    if (dead) {
+      ellipseFill(g, 0, -0.1, 0.022, 0.022, c.ink);
+    } else if (beating) {
+      ellipseFill(g, 0, -0.1, 0.06, 0.035, c.ink); // roaring
+    } else {
+      shape(g, [-0.06, -0.105, 0.06, -0.105, 0.05, -0.09, -0.05, -0.09], c.ink);
+    }
+
+    g.restore();
+  }
+
+  // Two full spins that ease out over the first DEATH_SPIN_TIME seconds of
+  // the death pause, ending tipped over (DEATH_TILT) where it stays.
+  const DEATH_SPIN_TIME = 0.6;
+  const DEATH_TILT = 0.4;
+  function deathSpinAngle() {
+    const p = Math.min(1, (DEATH_PAUSE - deathTimer) / DEATH_SPIN_TIME);
+    const eased = 1 - (1 - p) ** 3;
+    return (Math.PI * 4 + DEATH_TILT) * eased;
+  }
+
+  // --- boss gorilla sprite ---
+  // Modeled on the owner's reference (a Gorilla Tag plush): rounded black
+  // body, grey ears/face/chest, big white eyes with black rims, long arms
+  // stretched out to the sides, and a rainbow zig-zag party hat. He holds a
+  // poop in his left hand. Drawn smooth (ellipses and round strokes) rather
+  // than faceted, because the reference is a plush.
+  const BOSS_COLORS = {
+    fur: '#26272b',
+    furLight: '#3b3d43',
+    furDark: '#151619',
+    face: '#8f9197',
+    faceLight: '#aeb0b5',
+    earInner: '#6c6e74',
+    ink: '#0b0b0c',
+  };
+  const PARTY_HAT_STRIPES = ['#e53935', '#fb8c00', '#fdd835', '#43a047', '#1e88e5', '#8e24aa', '#ec407a'];
+
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  function drawPartyHat(g) {
+    g.save();
+    g.translate(0.01, -0.48);
+    g.rotate(0.12);
+    const w = 0.13;
+    const h = 0.42;
+    g.beginPath();
+    g.moveTo(-w, 0); g.lineTo(w, 0); g.lineTo(0.02, -h); g.closePath();
+    g.save();
+    g.clip();
+    const band = h / PARTY_HAT_STRIPES.length;
+    PARTY_HAT_STRIPES.forEach((color, i) => {
+      // each stripe's top edge is a zig-zag, like the reference hat
+      const y0 = -i * band + 0.01;
+      const y1 = -(i + 1) * band;
+      g.beginPath();
+      g.moveTo(-0.2, y0);
+      g.lineTo(0.2, y0);
+      for (let x = 0.2, up = true; x >= -0.2; x -= 0.035, up = !up) g.lineTo(x, y1 + (up ? -0.014 : 0.014));
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+    });
+    g.restore();
+    g.beginPath();
+    g.moveTo(-w, 0); g.lineTo(w, 0); g.lineTo(0.02, -h); g.closePath();
+    g.lineWidth = 0.012;
+    g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+    g.stroke();
+    g.restore();
+  }
+
+  // raise: 0..1 how far the throwing (left) arm is lifted overhead.
+  // holding: draw the poop in his raised/left hand. sway: waddle tilt.
+  function drawBoss(g, cx, cy, size, { raise = 0, holding = true, sway = 0 } = {}) {
+    const c = BOSS_COLORS;
+    const e = raise * raise * (3 - 2 * raise); // smoothstep
+    const leftElbow = [lerp(-0.55, -0.42, e), lerp(0.12, -0.28, e)];
+    const leftHand = [lerp(-0.92, BOSS_HAND_UP[0], e), lerp(0.22, BOSS_HAND_UP[1], e)];
+    g.save();
+    g.translate(cx, cy);
+    g.rotate(sway);
+    g.scale(size, size);
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+
+    // long plush arms stretched out to the sides, behind the body
+    for (const [elbow, hand, sx] of [[leftElbow, leftHand, -1], [[0.55, 0.12], [0.92, 0.22], 1]]) {
+      g.beginPath();
+      g.moveTo(sx * 0.17, 0);
+      g.lineTo(elbow[0], elbow[1]);
+      g.lineTo(hand[0], hand[1]);
+      g.strokeStyle = c.fur;
+      g.lineWidth = 0.15;
+      g.stroke();
+      g.strokeStyle = c.furLight; // soft highlight along the top of the arm
+      g.lineWidth = 0.035;
+      g.beginPath();
+      g.moveTo(sx * 0.2, -0.04);
+      g.lineTo(elbow[0], elbow[1] - 0.045);
+      g.stroke();
+      ellipseFill(g, hand[0], hand[1], 0.085, 0.065, c.furDark);
+    }
+
+    // body with chest patch
+    ellipseFill(g, 0, 0.13, 0.25, 0.25, c.fur);
+    ellipseFill(g, -0.07, 0.06, 0.1, 0.12, c.furLight);
+    ellipseFill(g, 0, 0.15, 0.12, 0.16, c.face);
+
+    // ears, head, face mask
+    for (const sx of [-1, 1]) {
+      ellipseFill(g, sx * 0.24, -0.3, 0.075, 0.075, c.face);
+      ellipseFill(g, sx * 0.245, -0.3, 0.04, 0.04, c.earInner);
+    }
+    ellipseFill(g, 0, -0.3, 0.25, 0.23, c.fur);
+    for (const sx of [-1, 1]) ellipseFill(g, sx * 0.09, -0.32, 0.098, 0.095, c.face);
+    ellipseFill(g, 0, -0.2, 0.13, 0.1, c.face);
+    ellipseFill(g, 0, -0.19, 0.1, 0.07, c.faceLight);
+
+    // brows sit on top of the eye rims, never over the eyes
+    for (const sx of [-1, 1]) {
+      shape(g, [sx * 0.19, -0.43, sx * 0.02, -0.41, sx * 0.02, -0.392, sx * 0.18, -0.405], c.ink);
+    }
+    // big white eyes with black rims and pupils
+    for (const sx of [-1, 1]) {
+      ellipseFill(g, sx * 0.09, -0.32, 0.07, 0.065, c.ink);
+      ellipseFill(g, sx * 0.09, -0.32, 0.056, 0.051, '#ffffff');
+      ellipseFill(g, sx * 0.082, -0.315, 0.027, 0.027, c.ink);
+      ellipseFill(g, sx * 0.082 - 0.009, -0.325, 0.008, 0.008, '#ffffff');
+    }
+    // nose and mouth
+    for (const sx of [-1, 1]) ellipseFill(g, sx * 0.03, -0.21, 0.016, 0.011, c.ink);
+    g.beginPath();
+    g.moveTo(-0.06, -0.15);
+    g.quadraticCurveTo(0, -0.13, 0.06, -0.15);
+    g.strokeStyle = c.ink;
+    g.lineWidth = 0.015;
+    g.stroke();
+
+    drawPartyHat(g);
+
+    if (holding) {
+      // back to pixel scale at the hand so the emoji renders at a normal font size
+      g.save();
+      g.translate(leftHand[0], leftHand[1] - 0.05);
+      g.scale(1 / size, 1 / size);
+      g.font = `${size * 0.24}px ${EMOJI_FONT}`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = '#fff';
+      g.fillText('💩', 0, 0);
+      g.restore();
+    }
+    g.restore();
+  }
+
+  // --- top-hat gorillas (the three in the goal row) ---
+  // Modeled on the owner's second plush reference: a sitting black plush
+  // with grey ears, face and chest, a long grey nose ridge, eyes outlined in
+  // light-blue stitching, a stitched mouth, arms resting down in front with
+  // the hands on the ground, and a tall black top hat with a grey band.
+  // Smooth like the boss, since it's a plush. `beat` works like
+  // drawGorilla's: while chest-beating, the fists alternate onto the chest,
+  // the mouth opens, and the hat bounces.
+  const HAT_PLUSH_COLORS = {
+    fur: '#1f2024',
+    furLight: '#34363b',
+    furDark: '#121315',
+    face: '#6f727a',
+    faceLight: '#858891',
+    stitch: '#a9d9e2',
+    eye: '#eef6f7',
+    ink: '#0b0b0c',
+    hat: '#0e0e10',
+    hatLight: '#2a2b31',
+    band: '#8d9097',
+  };
+
+  function drawHatGorilla(g, cx, cy, size, { beat = -1 } = {}) {
+    const c = HAT_PLUSH_COLORS;
+    const beating = beat >= 0;
+    const bob = beating ? Math.abs(Math.sin(beat * Math.PI * 2 * CHEST_BEATS_PER_SEC)) * 0.03 : 0;
+    g.save();
+    g.translate(cx, cy - bob * size);
+    g.scale(size, size);
+    g.lineJoin = 'round';
+    g.lineCap = 'round';
+
+    // body and chest patch
+    ellipseFill(g, 0, 0.14, 0.27, 0.26, c.fur);
+    ellipseFill(g, -0.08, 0.07, 0.1, 0.12, c.furLight);
+    ellipseFill(g, 0, 0.16, 0.11, 0.14, c.face);
+
+    // arms: resting down in front with hands on the ground, or chest-beating
+    for (const sx of [-1, 1]) {
+      let hand;
+      if (beating) {
+        const phase = beat * Math.PI * 2 * CHEST_BEATS_PER_SEC + (sx < 0 ? 0 : Math.PI);
+        const v = 0.5 + 0.5 * Math.sin(phase); // 1 = fist on the chest
+        hand = [sx * lerp(0.34, 0.08, v), lerp(-0.1, 0.12, v)];
+      } else {
+        hand = [sx * 0.2, 0.38];
+      }
+      g.beginPath();
+      g.moveTo(sx * 0.22, -0.02);
+      g.quadraticCurveTo(sx * 0.3, 0.16, hand[0], hand[1]);
+      g.strokeStyle = c.fur;
+      g.lineWidth = 0.15;
+      g.stroke();
+      ellipseFill(g, hand[0], hand[1] + 0.02, 0.085, 0.06, c.furDark);
+    }
+
+    // ears and head
+    for (const sx of [-1, 1]) {
+      ellipseFill(g, sx * 0.25, -0.3, 0.07, 0.07, c.face);
+      ellipseFill(g, sx * 0.255, -0.3, 0.037, 0.037, c.furDark);
+    }
+    ellipseFill(g, 0, -0.3, 0.25, 0.23, c.fur);
+
+    // face mask: eye patches, a long nose ridge, and the muzzle
+    for (const sx of [-1, 1]) ellipseFill(g, sx * 0.09, -0.33, 0.095, 0.075, c.face);
+    ellipseFill(g, 0, -0.22, 0.055, 0.11, c.face);
+    ellipseFill(g, 0, -0.14, 0.085, 0.055, c.faceLight);
+
+    // eyes: pale, outlined in light-blue stitching, black pupils
+    for (const sx of [-1, 1]) {
+      g.save();
+      g.translate(sx * 0.09, -0.33);
+      g.rotate(sx * 0.18); // slight scowl
+      ellipseFill(g, 0, 0, 0.058, 0.036, c.eye);
+      g.beginPath();
+      g.ellipse(0, 0, 0.058, 0.036, 0, 0, Math.PI * 2);
+      g.strokeStyle = c.stitch;
+      g.lineWidth = 0.014;
+      g.stroke();
+      ellipseFill(g, -sx * 0.008, 0.004, 0.02, 0.02, c.ink);
+      g.restore();
+    }
+
+    // nostrils and a stitched "w" mouth (open while chest-beating)
+    for (const sx of [-1, 1]) ellipseFill(g, sx * 0.022, -0.165, 0.013, 0.009, c.ink);
+    if (beating) {
+      ellipseFill(g, 0, -0.12, 0.045, 0.028, c.ink);
+    } else {
+      g.beginPath();
+      g.moveTo(-0.04, -0.125);
+      g.quadraticCurveTo(-0.02, -0.105, 0, -0.12);
+      g.quadraticCurveTo(0.02, -0.105, 0.04, -0.125);
+      g.strokeStyle = c.stitch;
+      g.lineWidth = 0.012;
+      g.stroke();
+    }
+
+    // tall top hat with a grey band; a faint rim keeps it readable on black
+    g.save();
+    g.translate(0, -0.47 - bob * 2.5);
+    g.rotate(-0.06);
+    g.lineWidth = 0.014;
+    g.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    shape(g, [-0.15, 0, 0, 0, 0, -0.36, -0.14, -0.36], c.hatLight);
+    shape(g, [0, 0, 0.15, 0, 0.14, -0.36, 0, -0.36], c.hat);
+    shape(g, [-0.15, -0.02, 0.15, -0.02, 0.15, -0.055, -0.15, -0.055], c.band);
+    shape(g, [-0.27, -0.015, 0.27, -0.015, 0.28, 0.025, -0.28, 0.025], c.hat); // brim
+    g.restore();
+
+    g.restore();
+  }
+
+  // The canopy band above the goal row, with the branch the boss walks on.
+  function drawBossBand(width, bandH) {
+    const grad = ctx.createLinearGradient(0, 0, 0, bandH);
+    grad.addColorStop(0, '#0a1c0d');
+    grad.addColorStop(1, '#17391c');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, width, bandH);
+    const branchY = bandH - 0.1 * CELL_H;
+    ctx.fillStyle = '#5a3a1e';
+    ctx.fillRect(0, branchY - 0.03 * CELL_H, width, 0.08 * CELL_H);
+    ctx.fillStyle = '#6f4a27';
+    ctx.fillRect(0, branchY - 0.03 * CELL_H, width, 0.025 * CELL_H);
+    const leaves = COLS * 2;
+    for (let i = 0; i < leaves; i++) {
+      ctx.save();
+      ctx.translate(((i + 0.5) / leaves) * width, branchY + 0.05 * CELL_H);
+      ctx.rotate(i % 2 ? 0.5 : -0.5);
+      ctx.beginPath();
+      ctx.ellipse(0, 0.05 * CELL_H, SPRITE * 0.12, SPRITE * 0.045, 0, 0, Math.PI * 2);
+      ctx.fillStyle = i % 3 ? '#2f6b35' : '#3c8443';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
   function draw() {
     const width = CELL_W * COLS;
-    const height = CELL_H * ROWS;
-    ctx.clearRect(0, 0, width, height);
+    const bandH = BOSS_BAND_ROWS * CELL_H;
+    ctx.clearRect(0, 0, width, bandH + CELL_H * ROWS);
+    drawBossBand(width, bandH);
+
+    // Everything below is in grid space: row 0 starts at y = 0, and the
+    // boss band sits at negative y above it.
+    ctx.save();
+    ctx.translate(0, bandH);
 
     laneDefs.forEach((lane, row) => {
       ctx.fillStyle = LANE_COLORS[lane.type];
@@ -591,21 +1275,13 @@
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
 
-    // gorillas
-    ctx.font = `${SPRITE * 0.7}px ${EMOJI_FONT}`;
-    const now = performance.now();
+    // enemy gorillas; a shaking gorilla is chest-beating before its drop
     GORILLA_COLS.forEach(col => {
-      const x = (col + 0.5) * CELL_W;
-      const y = 0.5 * CELL_H;
-      if (gorillaShake[col] > 0) {
-        ctx.save();
-        ctx.translate(x + Math.sin(now / 22) * SPRITE * 0.08, y);
-        ctx.rotate(Math.sin(now / 35) * 0.12);
-        ctx.fillText('🦍', 0, 0);
-        ctx.restore();
-      } else {
-        ctx.fillText('🦍', x, y);
-      }
+      const beat = gorillaShake[col] > 0 ? GORILLA_SHAKE_TIME - gorillaShake[col] : -1;
+      // 125% of the player's size; hands rest on the bottom of row 0 and the
+      // hat pokes up into the boss band.
+      const size = playerSize() * 1.25;
+      drawHatGorilla(ctx, (col + 0.5) * CELL_W, CELL_H - 0.46 * size, size, { beat });
     });
 
     // gaps
@@ -618,7 +1294,7 @@
         // Emoji glyphs inherit fillStyle's alpha, so reset to opaque before
         // any fillText or everything drawn after this comes out faded.
         ctx.fillStyle = '#fff';
-        ctx.fillText('🐒', cx, cy);
+        drawGorilla(cx, cy, playerSize() * 0.9, PLAYER_COLORS);
       } else {
         ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 2;
@@ -630,6 +1306,16 @@
       }
     });
 
+    // boss: waddles while walking, stands still to wind up the throw
+    const walkT = performance.now() / 1000;
+    const walking = boss.windup <= 0 && gameRunning;
+    drawBoss(ctx, bossCenterX(), bossCenterY() - (walking ? Math.abs(Math.sin(walkT * 8)) * 0.03 * bossSize() : 0), bossSize(), {
+      raise: boss.windup > 0 ? 1 - boss.windup / BOSS_WINDUP : 0,
+      holding: boss.reload <= 0,
+      sway: walking ? Math.sin(walkT * 8) * 0.06 : 0,
+    });
+    ctx.fillStyle = '#fff'; // opaque again before emoji hazards
+
     // hazards
     const HAZARD_EMOJI = { banana: '🍌', barrel: '🛢️', poop: '💩' };
     hazards.forEach(h => {
@@ -640,8 +1326,63 @@
 
     // monkey
     const pos = currentMonkeyPos();
-    ctx.font = `${SPRITE * 0.7}px ${EMOJI_FONT}`;
-    ctx.fillText('🐒', (pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H);
+    drawGorilla((pos.col + 0.5) * CELL_W, (pos.row + 0.5) * CELL_H, playerSize(), PLAYER_COLORS, {
+      hop: monkey.animT,
+      dead: monkey.dead,
+      angle: monkey.dead ? deathSpinAngle() : 0,
+    });
+    ctx.restore();
+  }
+
+  // --- splash dancer ---
+  // The player gorilla dancing on the start screen, drawn with the same
+  // drawGorilla() as in-game so it always matches. Eyes are never covered.
+  // One DANCE_PERIOD loop: bounce-and-sway groove, a chest-beat, then a
+  // hop-spin that lands facing front again.
+  const startOverlayEl = document.getElementById('startOverlay');
+  const splashCanvas = document.getElementById('splashDancer');
+  const splashCtx = splashCanvas.getContext('2d');
+  const DANCE_PERIOD = 4.2;
+  let splashSize = 0;
+  window.addEventListener('resize', () => { splashSize = 0; }); // re-measure next frame
+
+  function sizeSplashCanvas() {
+    const cssSize = splashCanvas.getBoundingClientRect().width;
+    if (!cssSize) return;
+    const dpr = window.devicePixelRatio || 1;
+    splashSize = cssSize;
+    splashCanvas.width = Math.round(cssSize * dpr);
+    splashCanvas.height = Math.round(cssSize * dpr);
+    splashCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function drawSplashDancer(ms) {
+    if (!splashSize) sizeSplashCanvas();
+    if (!splashSize) return;
+    const t = (ms / 1000) % DANCE_PERIOD;
+    let hop = 1;
+    let beat = -1;
+    let angle = 0;
+    if (t < 2.4) {
+      hop = (t * 2) % 1; // two bounces a second
+      angle = Math.sin(t * Math.PI * 2) * 0.14; // sway
+    } else if (t < 3.4) {
+      beat = t - 2.4;
+    } else {
+      const p = (t - 3.4) / (DANCE_PERIOD - 3.4);
+      hop = p;
+      angle = Math.PI * 2 * (1 - (1 - p) ** 2);
+    }
+
+    const s = splashSize;
+    const size = s * 0.66; // arms splay wide, so leave room for the hands
+    const lift = Math.sin(hop * Math.PI);
+    splashCtx.clearRect(0, 0, s, s);
+    splashCtx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    splashCtx.beginPath();
+    splashCtx.ellipse(s / 2, s * 0.9, s * (0.2 - lift * 0.05), s * 0.035, 0, 0, Math.PI * 2);
+    splashCtx.fill(); // shadow shrinks as he jumps
+    drawGorilla(s / 2, s * 0.52, size, PLAYER_COLORS, { hop, beat, angle, g: splashCtx });
   }
 
   // --- main loop ---
@@ -652,22 +1393,28 @@
     if (gameRunning) {
       updateHazards(dt);
 
-      if (moveLock) {
-        monkey.animT += (dt * 1000) / ANIM_DURATION;
-        if (monkey.animT >= 1) {
-          monkey.animT = 1;
-          finishMove();
+      if (deathTimer > 0) {
+        deathTimer -= dt;
+        if (deathTimer <= 0) finishDeath();
+      } else {
+        if (moveLock) {
+          monkey.animT += (dt * 1000) / ANIM_DURATION;
+          if (monkey.animT >= 1) {
+            monkey.animT = 1;
+            finishMove();
+          }
         }
+
+        lifeTime -= dt;
+        document.getElementById('timerbar').style.width = `${Math.max(lifeTime / LIFE_TIME_MAX, 0) * 100}%`;
+
+        const hit = (!moveLock && hazardHit()) || lifeTime <= 0;
+        if (hit) loseLife();
       }
-
-      lifeTime -= dt;
-      document.getElementById('timerbar').style.width = `${Math.max(lifeTime / LIFE_TIME_MAX, 0) * 100}%`;
-
-      const hit = (!moveLock && hazardHit()) || lifeTime <= 0;
-      if (hit) loseLife();
     }
 
     draw();
+    if (!startOverlayEl.classList.contains('hidden')) drawSplashDancer(t);
     requestAnimationFrame(loop);
   }
 

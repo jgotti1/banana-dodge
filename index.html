@@ -23,36 +23,28 @@
     <button id="btn-right" class="dbtn right">▶</button>
   </div>
 </div>
-<div id="startOverlay" class="overlay">
-  <svg class="monkey monkey-idle" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
-    <g class="m-tail"><path d="M65,175 Q10,150 25,100 Q30,80 50,85" fill="none" stroke="#8a5a2b" stroke-width="14" stroke-linecap="round"/></g>
-    <g class="m-leg m-leg-left"><rect x="76" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-    <g class="m-leg m-leg-right"><rect x="102" y="182" width="22" height="34" rx="11" fill="#8a5a2b"/></g>
-    <ellipse cx="100" cy="150" rx="48" ry="50" fill="#8a5a2b"/>
-    <ellipse cx="100" cy="158" rx="30" ry="36" fill="#e8c39e"/>
-    <g class="m-arm m-arm-left"><rect x="48" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-    <g class="m-arm m-arm-right"><rect x="132" y="118" width="20" height="50" rx="10" fill="#8a5a2b"/></g>
-    <g class="m-head">
-      <circle cx="63" cy="78" r="17" fill="#8a5a2b"/>
-      <circle cx="137" cy="78" r="17" fill="#8a5a2b"/>
-      <circle cx="63" cy="78" r="9" fill="#e8c39e"/>
-      <circle cx="137" cy="78" r="9" fill="#e8c39e"/>
-      <circle cx="100" cy="80" r="44" fill="#8a5a2b"/>
-      <ellipse cx="100" cy="90" rx="30" ry="26" fill="#e8c39e"/>
-      <rect class="m-brow m-brow-left" x="78" y="65" width="14" height="5" rx="2.5" fill="#5a3a1c"/>
-      <rect class="m-brow m-brow-right" x="108" y="65" width="14" height="5" rx="2.5" fill="#5a3a1c"/>
-      <g class="m-eyes">
-        <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
-        <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
-      </g>
-      <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
-      <path class="m-mouth" d="M85,108 Q100,116 115,108" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
-    </g>
-  </svg>
-  <h1>Banana Dodge</h1>
-  <p>Cross the jungle lanes of flying bananas and rolling barrels, then squeeze through a gap between the gorillas. Fill all four gaps to clear the level.</p>
-  <p class="best-line">Best score: <span class="best-score">0</span> · Highest level: <span class="best-level">0</span></p>
-  <button id="startBtn">Start Game</button>
+<div id="startOverlay" class="overlay splash">
+  <div class="splash-card">
+    <p class="splash-kicker">A jungle crossing game</p>
+    <h1 class="splash-title"><span class="splash-title-top">Banana</span><span class="splash-title-bottom">Dodge</span></h1>
+    <div class="splash-stage">
+      <canvas id="splashDancer" role="img" aria-label="Your gorilla, dancing while it waits for you to play"></canvas>
+    </div>
+    <p class="splash-tagline">Dodge flying bananas, rolling barrels, and whatever the gorillas drop. Fill all four gaps to clear the level.</p>
+    <div class="splash-stats">
+      <div class="splash-stat">
+        <span class="splash-stat-label">Best score</span>
+        <span class="splash-stat-value best-score">0</span>
+      </div>
+      <div class="splash-stat">
+        <span class="splash-stat-label">Highest level</span>
+        <span class="splash-stat-value best-level">0</span>
+      </div>
+    </div>
+    <button id="startBtn" class="splash-play">Play</button>
+    <p class="splash-hint splash-hint-keys">Move with <kbd>&larr;</kbd><kbd>&uarr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd> or <kbd>WASD</kbd> &middot; <kbd>Enter</kbd> to start</p>
+    <p class="splash-hint splash-hint-touch">Tap Play, then use the arrow pad to move</p>
+  </div>
 </div>
 <div id="introOverlay" class="overlay hidden">
   <svg class="monkey monkey-cool" viewBox="0 0 200 220" width="140" height="154" aria-hidden="true">
@@ -74,8 +66,13 @@
         <g class="m-eye"><circle cx="85" cy="82" r="8" fill="#fff"/><circle cx="86" cy="83" r="4" fill="#222"/></g>
         <g class="m-eye"><circle cx="115" cy="82" r="8" fill="#fff"/><circle cx="114" cy="83" r="4" fill="#222"/></g>
       </g>
-      <rect class="m-shades" x="72" y="76" width="56" height="14" rx="7" fill="#111"/>
-      <rect x="97" y="80" width="6" height="4" fill="#111"/>
+      <g class="m-shades" transform="rotate(-8 100 54)">
+        <rect x="72" y="47" width="25" height="13" rx="6" fill="#111"/>
+        <rect x="103" y="47" width="25" height="13" rx="6" fill="#111"/>
+        <rect x="96" y="51" width="8" height="3" fill="#111"/>
+        <rect x="76" y="49" width="7" height="3" rx="1.5" fill="#fff" opacity="0.5"/>
+        <rect x="107" y="49" width="7" height="3" rx="1.5" fill="#fff" opacity="0.5"/>
+      </g>
       <ellipse cx="100" cy="96" rx="5" ry="4" fill="#5a3a1c"/>
       <path class="m-mouth" d="M88,110 Q100,102 112,110" stroke="#5a3a1c" stroke-width="3" fill="none" stroke-linecap="round"/>
     </g>

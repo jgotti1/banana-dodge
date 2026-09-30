@@ -299,6 +299,12 @@ Rendering is plain Canvas 2D, driven by a vanilla JS game loop
   and squashed every sprite sideways. `resizeCanvas()` now reads back
   the canvas's rendered width as a safeguard, so a clamp would shrink
   the board instead of distorting it.
+  **The `#game` border is outside the canvas**: `#game` is
+  `box-sizing: content-box`, and `resizeCanvas()` subtracts the border from
+  the available space, sets `canvas.style.width` in px, adds the border to
+  `.wrap`'s width, and reads back `canvas.clientWidth`. With the old
+  `border-box` + `width: 100%`, the 4-6px border shrank the content box below
+  the bitmap size and squished everything on large screens (iPad Pro).
 - **Gorilla sprites**: the player and the three goal-row gorillas share
   one drawing, `drawPlushGorilla(g, cx, cy, size, colors, { beat, hop,
   dead, angle, hat })`, modeled on a top-hat Gorilla Tag plush the owner

@@ -1181,18 +1181,26 @@
     const currentCanvasHeight = canvas.getBoundingClientRect().height || 0;
     const chromeHeight = (dpadBottom - wrapTop) - currentCanvasHeight + paddingV;
 
-    const availableHeight = Math.max(200, window.innerHeight - chromeHeight);
-    const availableWidth = Math.max(240, window.innerWidth - paddingH);
+    // The canvas border sits outside its content box (box-sizing: content-box
+    // in CSS), so reserve it here; otherwise the bitmap gets squeezed into a
+    // box slightly smaller than it and every sprite is squished.
+    const canvasStyle = getComputedStyle(canvas);
+    const borderX = parseFloat(canvasStyle.borderLeftWidth) + parseFloat(canvasStyle.borderRightWidth);
+    const borderY = parseFloat(canvasStyle.borderTopWidth) + parseFloat(canvasStyle.borderBottomWidth);
+
+    const availableHeight = Math.max(200, window.innerHeight - chromeHeight - borderY);
+    const availableWidth = Math.max(240, window.innerWidth - paddingH - borderX);
     const fitW = availableWidth / COLS;
     const fitH = availableHeight / (ROWS + BOSS_BAND_ROWS);
     CELL_W = Math.min(fitW, fitH * MAX_CELL_W_RATIO);
     CELL_H = Math.min(fitH, CELL_W * MAX_CELL_H_RATIO);
     SPRITE = Math.min(CELL_W, CELL_H);
 
-    wrapEl.style.width = `${CELL_W * COLS}px`;
+    wrapEl.style.width = `${CELL_W * COLS + borderX}px`;
+    canvas.style.width = `${CELL_W * COLS}px`;
     // Draw at the width the canvas actually rendered at, so any CSS that
     // clamps it shrinks the board instead of squashing the sprites.
-    const renderedW = canvas.getBoundingClientRect().width;
+    const renderedW = canvas.clientWidth;
     if (renderedW > 0 && Math.abs(renderedW - CELL_W * COLS) > 1) {
       CELL_W = renderedW / COLS;
       CELL_H = Math.min(CELL_H, CELL_W * MAX_CELL_H_RATIO);
